@@ -1,5 +1,3 @@
-<p align="center"><img src="snes/sce_sys/icon0.png" width="180" alt="PS5SNES logo"></p>
-
 # PS5SNES
 <p align="center">
   <img src="screenshots/background.png" alt="PS5NES game shelf">
