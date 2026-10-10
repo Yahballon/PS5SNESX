@@ -1,0 +1,9 @@
+PS5NES v6 controller bindings (AI-assisted)
+Shared controller schema feeds native Controls tab and actual game input.
+NES A/B/Start/Select/directions, left-stick toggle and 3-button save/load/menu chords configurable.
+Original global and per-game INI persistence retained; legacy A/B swap read compatibly.
+Tests: custom/disabled bindings, compound buttons, one event per press, held-at-launch guard,
+menu emergency hold, invalid-value fallback, legacy mapping and global/per-game overrides passed.
+Original controller sheet rendered and visually inspected. QR JavaScript syntax verified with V8.
+PS5SX2 native memory parameters validated before signing; ZIP CRC and source/runtime SHA256 verified.
+Changes apply when the next game is started. PS5 hardware behavior still requires user testing.

@@ -1,0 +1,9 @@
+PS5NES v1 verification (AI-assisted)
+- Native link: 228 imports, zero non-stub undefined symbols.
+- Signed eboot: integrity valid.
+- Host integration: generated NROM video/audio/input, ZIP decoding and rejection,
+  battery RAM persistence, save-state roundtrip and repeated game/menu reloads passed.
+- Actual tiled renderer: RGBA colors, 4x pixel scaling and failed-flip buffer handling passed.
+- Package: ZIP CRC, SHA256 manifest, separate PPSA99204 app/helper identity verified.
+- No commercial ROMs, BIOS or game/save data included.
+- Not run on PS5 hardware. NFS transport relies on the existing tested PS5SX2 implementation.

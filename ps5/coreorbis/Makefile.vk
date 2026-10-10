@@ -1,0 +1,506 @@
+# PCSX2 PS5 port -- the Vulkan build.
+#
+# GSDeviceVK on the Vulkan driver linked into the eboot (Swordpdf/PS5HB_Vulkan).
+# Same sources and compiler flags as the GL build (Makefile, build 285), minus
+# OpenGL: the GL renderer, glad and the GL shims go, because the ps5-opengl
+# runtime and the driver both carry Mesa and psbc. Added: PCSX2's Vulkan backend
+# and the static shaderc shim over glslang (orbis-shims/ps5_shaderc.cpp).
+# Objects go to obj-vk/, so the two builds never share an object.
+#
+#   make -f Makefile.vk -j2        compile everything
+#   bash link-vk.sh                link, sign -> $(VK_OUT)/app/eboot.bin
+#
+# Run it from this folder. PCSX2 is this repository's root; the other dependencies
+# come from PS5SX2_DEPS (see ps5/README.md) unless set one by one.
+
+VK_MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+PCSX2           ?= $(abspath $(VK_MAKEFILE_DIR)../..)
+RYML            ?= $(PS5SX2_DEPS)/ryml
+SHADERC_INCLUDE ?= $(PS5SX2_DEPS)/shaderc/libshaderc/include
+GLSLANG         ?= $(PS5SX2_DEPS)/glslang
+PS5_PAYLOAD_SDK ?= $(PS5SX2_DEPS)/sdk285
+ifeq ($(wildcard $(PS5_PAYLOAD_SDK)/bin/prospero-clang++),)
+$(error no SDK at "$(PS5_PAYLOAD_SDK)": set PS5SX2_DEPS or PS5_PAYLOAD_SDK, see ps5/README.md)
+endif
+
+CXX := $(PS5_PAYLOAD_SDK)/bin/prospero-clang++
+CC  := $(PS5_PAYLOAD_SDK)/bin/prospero-clang
+export PS5_PAYLOAD_SDK
+
+# vk-285-91: -mno-vzeroupper. The GS thread's profiles had 5-7% of their samples right after a VZEROUPPER;
+# Zen 2 has no SSE/AVX transition penalty for it to avoid (the upper halves are renamed apart), and leaving
+# it out changes no results (the ABI doesn't keep the upper halves across calls). main-boot [vzubench]
+# measures the instruction.
+# vk-285-102: LLVM's DAG combiner narrows "x |= constant" and "x &= ~constant" on a memory word to a byte (or
+# 16-bit) operation on the byte the constant touches. A later load of the whole word can't take its value from
+# the narrower store and waits until the store reaches the cache, behind every older store in the queue.
+# vk-285-101's GS profile had 3.8% of the thread on one such load (ApplyTFXState's m_dirty_flags after
+# SetScissor's orb); PCSX2's register and flag words (VIF/DMA/GIF bitfields, EE state) get the same treatment.
+# ORBIS_STORE_NARROWING=1 builds with the narrowing as before.
+ORBIS_STORE_NARROWING ?= 0
+ifeq ($(ORBIS_STORE_NARROWING),0)
+NARROW_FLAGS := -mllvm -combiner-reduce-load-op-store-width=false
+else
+NARROW_FLAGS :=
+endif
+CXXFLAGS := -Wall -g -O3 -DNDEBUG -std=c++20 -march=znver2 -msse4.1 -mavx2 -mno-vzeroupper $(NARROW_FLAGS) \
+  -D_M_X86=1 -D__POSIX__=1 -DXBYAK_NO_EXCEPTION \
+  -DOVERRIDE_HOST_PAGE_SIZE=0x4000 -DOVERRIDE_HOST_CACHE_LINE_SIZE=64 \
+  -fno-exceptions -fno-rtti -ffunction-sections -fdata-sections \
+  -fvisibility=hidden \
+  -Wno-macro-redefined -Wno-unused-function \
+  -include common/Threading.h \
+  -I./include-orbis -I$(PCSX2)/ps5/third_party/zlib -I$(PCSX2) -I$(PCSX2)/pcsx2 -I$(PCSX2)/3rdparty/include \
+  -I$(PCSX2)/3rdparty/fmt/include \
+  -I$(PCSX2)/3rdparty/fast_float/include \
+  -I$(PCSX2)/3rdparty/rapidjson/include \
+  -I$(PCSX2)/3rdparty/simpleini/include \
+  -I$(PCSX2)/3rdparty/ccc/src \
+  -I$(PCSX2)/3rdparty/xbyak \
+  -I$(PCSX2)/3rdparty/zydis/include \
+  -I$(PCSX2)/3rdparty/zydis/dependencies/zycore/include \
+  -I$(PCSX2)/3rdparty/discord-rpc/include \
+  -I$(PCSX2)/3rdparty/demangler/include \
+  -I$(PCSX2)/3rdparty/rcheevos/include \
+  -I$(PCSX2)/3rdparty/imgui/include \
+  -I$(PCSX2)/3rdparty/soundtouch/soundtouch \
+  -I$(PCSX2)/3rdparty/freesurround/include \
+  -I$(RYML)/src \
+  -I$(RYML)/ext/c4core.src \
+  -I$(PCSX2)/3rdparty/vulkan/include -I$(SHADERC_INCLUDE) \
+  -DENABLE_VULKAN=1 -DORBIS_VULKAN=1
+
+RYML_SRCS := $(RYML)/src/c4/yml/common.cpp \
+  $(RYML)/src/c4/yml/emit_buf.cpp \
+  $(RYML)/src/c4/yml/emit_file.cpp \
+  $(RYML)/src/c4/yml/node_type.cpp \
+  $(RYML)/src/c4/yml/parse.cpp \
+  $(RYML)/src/c4/yml/reference_resolver.cpp \
+  $(RYML)/src/c4/yml/scalar_style.cpp \
+  $(RYML)/src/c4/yml/tag.cpp \
+  $(RYML)/src/c4/yml/tree.cpp \
+  $(RYML)/src/c4/yml/version.cpp \
+  $(RYML)/ext/c4core.src/c4/error.cpp \
+  $(RYML)/ext/c4core.src/c4/format.cpp \
+  $(RYML)/ext/c4core.src/c4/language.cpp \
+  $(RYML)/ext/c4core.src/c4/memory_util.cpp \
+  $(RYML)/ext/c4core.src/c4/utf.cpp \
+  $(RYML)/ext/c4core.src/c4/version.cpp
+
+X86_SRCS := $(PCSX2)/pcsx2/x86/BaseblockEx.cpp \
+  $(PCSX2)/pcsx2/x86/iCOP0.cpp \
+  $(PCSX2)/pcsx2/x86/iCore.cpp \
+  $(PCSX2)/pcsx2/x86/iFPU.cpp \
+  $(PCSX2)/pcsx2/x86/iFPUd.cpp \
+  $(PCSX2)/pcsx2/x86/iMMI.cpp \
+  $(PCSX2)/pcsx2/x86/iR3000A.cpp \
+  $(PCSX2)/pcsx2/x86/iR3000Atables.cpp \
+  $(PCSX2)/pcsx2/x86/iR5900Analysis.cpp \
+  $(PCSX2)/pcsx2/x86/iR5900Misc.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iCore.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900Arit.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900AritImm.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900Branch.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900Jump.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900LoadStore.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900Move.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900MultDiv.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900Shift.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/iR5900Templates.cpp \
+  $(PCSX2)/pcsx2/x86/ix86-32/recVTLB.cpp \
+  $(PCSX2)/pcsx2/x86/Vif_Dynarec.cpp \
+  $(PCSX2)/pcsx2/x86/Vif_UnpackSSE.cpp \
+  $(PCSX2)/pcsx2/x86/microVU.cpp
+
+# The GL build's GS list with the seven OpenGL files replaced by the Vulkan backend.
+GS_SRCS := $(PCSX2)/pcsx2/GS/GS.cpp \
+  $(PCSX2)/pcsx2/GS/GSBlock.cpp \
+  $(PCSX2)/pcsx2/GS/GSClut.cpp \
+  $(PCSX2)/pcsx2/GS/GSDrawingContext.cpp \
+  $(PCSX2)/pcsx2/GS/GSDrawingEnvironment.cpp \
+  $(PCSX2)/pcsx2/GS/GSLocalMemory.cpp \
+  $(PCSX2)/pcsx2/GS/GSLocalMemoryMultiISA.cpp \
+  $(PCSX2)/pcsx2/GS/GSPerfMon.cpp \
+  $(PCSX2)/pcsx2/GS/GSRingHeap.cpp \
+  $(PCSX2)/pcsx2/GS/GSState.cpp \
+  $(PCSX2)/pcsx2/GS/GSTables.cpp \
+  $(PCSX2)/pcsx2/GS/GSUtil.cpp \
+  $(PCSX2)/pcsx2/GS/GSVector.cpp \
+  $(PCSX2)/pcsx2/GS/GSXXH.cpp \
+  $(PCSX2)/pcsx2/GS/MultiISA.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Common/GSDevice.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Common/GSDirtyRect.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Common/GSFunctionMap.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Common/GSRenderer.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Common/GSTexture.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Common/GSVertexTrace.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Common/GSVertexTraceFMM.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Null/GSRendererNull.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/HW/GSHwHack.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/HW/GSRendererHW.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/HW/GSRendererHWMultiISA.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/HW/GSTextureCache.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/HW/GSTextureReplacements.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Vulkan/GSDeviceVK.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Vulkan/GSTextureVK.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Vulkan/vk_mem_alloc.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Vulkan/VKBuilders.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Vulkan/VKLoader.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Vulkan/VKShaderCache.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Vulkan/VKStreamBuffer.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/Vulkan/VKSwapChain.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/SW/GSDrawScanline.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/SW/GSRasterizer.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/SW/GSRendererSW.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/SW/GSTextureCacheSW.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp \
+  $(PCSX2)/pcsx2/GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp
+
+PAD_SRCS := $(PCSX2)/pcsx2/SIO/Pad/Pad.cpp \
+  $(PCSX2)/pcsx2/SIO/Pad/PadBase.cpp \
+  $(PCSX2)/pcsx2/SIO/Pad/PadDualshock2.cpp \
+  $(PCSX2)/pcsx2/SIO/Pad/PadGuitar.cpp \
+  $(PCSX2)/pcsx2/SIO/Pad/PadJogcon.cpp \
+  $(PCSX2)/pcsx2/SIO/Pad/PadNegcon.cpp \
+  $(PCSX2)/pcsx2/SIO/Pad/PadPopn.cpp \
+  $(PCSX2)/pcsx2/SIO/Pad/PadNotConnected.cpp
+
+SRCS := $(wildcard $(PCSX2)/pcsx2/*.cpp) \
+  $(PCSX2)/pcsx2/IPU/IPU.cpp \
+  $(PCSX2)/pcsx2/IPU/IPU_Fifo.cpp \
+  $(PCSX2)/pcsx2/IPU/IPUdither.cpp \
+  $(PCSX2)/pcsx2/IPU/IPUdma.cpp \
+  $(PCSX2)/pcsx2/IPU/IPU_MultiISA.cpp \
+  $(PCSX2)/pcsx2/IPU/yuv2rgb.cpp \
+  $(PCSX2)/pcsx2/SIO/Sio.cpp \
+  $(PCSX2)/pcsx2/SIO/Sio2.cpp \
+  $(PCSX2)/pcsx2/SIO/Sio0.cpp \
+  $(PCSX2)/pcsx2/SIO/Multitap/MultitapProtocol.cpp \
+  $(PCSX2)/pcsx2/SIO/Memcard/MemoryCardFile.cpp \
+  $(PCSX2)/pcsx2/SIO/Memcard/MemoryCardFolder.cpp \
+  $(PCSX2)/pcsx2/SIO/Memcard/MemoryCardProtocol.cpp \
+  $(PCSX2)/pcsx2/PINE.cpp \
+  $(PCSX2)/common/YAML.cpp
+
+SRCS := $(filter-out %/GSDumpReplayer.cpp %/Achievements.cpp %/PINE.cpp %/MTVU.cpp %/MTGS.cpp %/PerformanceMetrics.cpp %/Host.cpp %/IopModuleNames.cpp, $(SRCS))
+SRCS := $(SRCS) $(X86_SRCS) $(GS_SRCS) $(PAD_SRCS)
+
+INPUT_SRCS := $(PCSX2)/pcsx2/Input/InputManager.cpp \
+  $(PCSX2)/pcsx2/Input/InputSource.cpp
+
+SPU2_SRCS := $(wildcard $(PCSX2)/pcsx2/SPU2/*.cpp)
+
+CDVD_SRCS := $(PCSX2)/pcsx2/CDVD/BlockdumpFileReader.cpp \
+  $(PCSX2)/pcsx2/CDVD/ChdFileReader.cpp \
+  $(PCSX2)/pcsx2/CDVD/Ps1CD.cpp \
+  $(PCSX2)/pcsx2/CDVD/CDVDcommon.cpp \
+  $(PCSX2)/pcsx2/CDVD/CDVD.cpp \
+  $(PCSX2)/pcsx2/CDVD/CDVDdiscReader.cpp \
+  $(PCSX2)/pcsx2/CDVD/CDVDisoReader.cpp \
+  $(PCSX2)/pcsx2/CDVD/CDVDdiscThread.cpp \
+  $(PCSX2)/pcsx2/CDVD/CsoFileReader.cpp \
+  $(PCSX2)/pcsx2/CDVD/FlatFileReader.cpp \
+  $(PCSX2)/pcsx2/CDVD/InputIsoFile.cpp \
+  $(PCSX2)/pcsx2/CDVD/IsoHasher.cpp \
+  $(PCSX2)/pcsx2/CDVD/IsoReader.cpp \
+  $(PCSX2)/pcsx2/CDVD/OutputIsoFile.cpp \
+  $(PCSX2)/pcsx2/CDVD/ThreadedFileReader.cpp
+
+RECORD_SRCS := $(PCSX2)/pcsx2/Recording/InputRecording.cpp \
+  $(PCSX2)/pcsx2/Recording/InputRecordingControls.cpp \
+  $(PCSX2)/pcsx2/Recording/InputRecordingFile.cpp \
+  $(PCSX2)/pcsx2/Recording/PadData.cpp
+
+DEBUG_SRCS := $(PCSX2)/pcsx2/DebugTools/DebugInterface.cpp \
+  $(PCSX2)/pcsx2/DebugTools/DisassemblyManager.cpp \
+  $(PCSX2)/pcsx2/DebugTools/ExpressionParser.cpp \
+  $(PCSX2)/pcsx2/DebugTools/MIPSAnalyst.cpp \
+  $(PCSX2)/pcsx2/DebugTools/MipsAssembler.cpp \
+  $(PCSX2)/pcsx2/DebugTools/MipsAssemblerTables.cpp \
+  $(PCSX2)/pcsx2/DebugTools/MipsStackWalk.cpp \
+  $(PCSX2)/pcsx2/DebugTools/Breakpoints.cpp \
+  $(PCSX2)/pcsx2/DebugTools/SymbolGuardian.cpp \
+  $(PCSX2)/pcsx2/DebugTools/SymbolImporter.cpp \
+  $(PCSX2)/pcsx2/DebugTools/DisR3000A.cpp \
+  $(PCSX2)/pcsx2/DebugTools/DisR5900asm.cpp \
+  $(PCSX2)/pcsx2/DebugTools/DisVU0Micro.cpp \
+  $(PCSX2)/pcsx2/DebugTools/DisVU1Micro.cpp \
+  $(PCSX2)/pcsx2/DebugTools/BiosDebugData.cpp
+
+SRCS := $(SRCS) $(INPUT_SRCS) $(SPU2_SRCS) $(CDVD_SRCS) $(RECORD_SRCS) $(DEBUG_SRCS)
+SRCS := $(SRCS) $(PCSX2)/pcsx2/MTGS.cpp $(PCSX2)/pcsx2/MTVU.cpp $(PCSX2)/pcsx2/Host.cpp
+SRCS := $(SRCS) $(PCSX2)/pcsx2/PerformanceMetrics.cpp $(PCSX2)/pcsx2/PINE.cpp
+SRCS := $(SRCS) $(PCSX2)/pcsx2/USB/usb-pad/usb-pad.cpp $(PCSX2)/pcsx2/USB/usb-pad/usb-pad-ff.cpp
+SRCS := $(SRCS) $(PCSX2)/pcsx2/Host/AudioStream.cpp
+
+ST_SRCS := $(wildcard $(PCSX2)/3rdparty/soundtouch/source/SoundTouch/*.cpp)
+SRCS := $(SRCS) $(ST_SRCS)
+FS_SRCS := $(wildcard $(PCSX2)/3rdparty/freesurround/src/*.cpp)
+SRCS := $(SRCS) $(FS_SRCS)
+
+DEV9_SRCS := $(shell find $(PCSX2)/pcsx2/DEV9 -name '*.cpp' -not -path '*/Win32/*' -not -name 'pcap_io.cpp')
+
+RCHEEVOS := $(PCSX2)/3rdparty/rcheevos
+RCHEEVOS_SRCS := $(filter-out %/rc_libretro.c %/rc_client_raintegration.c %/rhash/hash.c %/rhash/cdreader.c, $(wildcard $(RCHEEVOS)/src/*.c $(RCHEEVOS)/src/rapi/*.c $(RCHEEVOS)/src/rcheevos/*.c $(RCHEEVOS)/src/rhash/*.c))
+
+DEMANGLE_SRCS := $(PCSX2)/3rdparty/demangler/src/cp-demangle.c \
+  $(PCSX2)/3rdparty/demangler/src/cplus-dem.c \
+  $(PCSX2)/3rdparty/demangler/src/d-demangle.c \
+  $(PCSX2)/3rdparty/demangler/src/dyn-string.c \
+  $(PCSX2)/3rdparty/demangler/src/safe-ctype.c \
+  $(PCSX2)/3rdparty/demangler/src/xmalloc.c \
+  $(PCSX2)/3rdparty/demangler/src/xstrdup.c \
+  $(PCSX2)/3rdparty/demangler/src/xexit.c \
+  $(PCSX2)/3rdparty/demangler/src/xmemdup.c \
+  $(PCSX2)/3rdparty/demangler/src/rust-demangle.c
+
+CCC_SRCS := $(wildcard $(PCSX2)/3rdparty/ccc/src/ccc/*.cpp)
+SRCS := $(SRCS) $(CCC_SRCS)
+
+IMGUI_SRCS := $(PCSX2)/3rdparty/imgui/src/imgui.cpp \
+  $(PCSX2)/3rdparty/imgui/src/imgui_draw.cpp \
+  $(PCSX2)/3rdparty/imgui/src/imgui_tables.cpp \
+  $(PCSX2)/3rdparty/imgui/src/imgui_widgets.cpp
+SRCS := $(SRCS) $(IMGUI_SRCS)
+
+SRCS := $(SRCS) $(PCSX2)/pcsx2/Achievements.cpp $(DEV9_SRCS)
+C_SRCS := $(RCHEEVOS_SRCS) $(DEMANGLE_SRCS)
+
+CFLAGS := -O3 -DNDEBUG -march=znver2 -msse4.1 -mavx2 -mno-vzeroupper $(NARROW_FLAGS) -D_M_X86=1 \
+  -DRC_NO_THREADS=1 -DRC_HASH_NO_DISC -DRC_HASH_NO_ENCRYPTED -DRC_HASH_NO_ROM -DRC_HASH_NO_ZIP \
+  -include string.h -include stdlib.h \
+  -I$(PCSX2)/3rdparty/rcheevos/include -I$(PCSX2)/3rdparty/demangler/include
+
+# vk-285-114: header dependencies (obj-vk/*.d). Without them an object whose own source didn't change kept an older
+# header's layout: 1.50's VKShaderCache.o and VKSwapChain.o still saw GSDeviceVK without vk-285-113's
+# m_orbis_submit_draws, so they read its fields 8 bytes off (a clean build of the same commit shows it).
+CXXFLAGS += -MMD -MP
+CFLAGS += -MMD -MP
+
+# vk-285-108: CHD images (.chd). PCSX2's ChdFileReader (CDVD_SRCS) reads them through libchdr, whose codecs
+# need 3rdparty/lzma's LZMA decoder and zlib and zstd; the SDK has neither of those two, so their
+# decompression sources are vendored in ps5/third_party (see its README.md). The frontend reads a CHD's
+# serial through libchdr as well (fe_games.cpp).
+PS5_THIRD := $(PCSX2)/ps5/third_party
+CHD_CSRCS := $(wildcard $(PCSX2)/3rdparty/libchdr/src/*.c) \
+  $(PCSX2)/3rdparty/lzma/src/LzmaDec.c \
+  $(addprefix $(PS5_THIRD)/zlib/,adler32.c crc32.c inffast.c inflate.c inftrees.c zutil.c) \
+  $(wildcard $(PS5_THIRD)/zstd/lib/common/*.c) $(wildcard $(PS5_THIRD)/zstd/lib/decompress/*.c)
+CHD_INCLUDES := -I$(PCSX2)/3rdparty/libchdr/include -I$(PCSX2)/3rdparty/lzma/include \
+  -I$(PS5_THIRD)/zlib -I$(PS5_THIRD)/zstd/lib
+C_SRCS := $(C_SRCS) $(CHD_CSRCS)
+
+# vk-285-113: CSO (zlib) and ZSO (LZ4) images. PCSX2's CsoFileReader (CDVD_SRCS) reads a CSO's blocks with the
+# vendored inflate and a ZSO's with the vendored lz4.c; the frontend's serial reader (fe_games.cpp) too.
+LZ4_CSRCS := $(PS5_THIRD)/lz4/lz4.c
+CSO_INCLUDES := -I$(PS5_THIRD)/lz4
+C_SRCS := $(C_SRCS) $(LZ4_CSRCS)
+
+# The GL build's shims minus glprobe, GLContextPS5 and gl_loader_table; plus the
+# shaderc shim and the Vulkan build's stand-ins for GL-only hooks.
+SHIM_SRCS := ./orbis-shims/ProsperoInput.cpp ./orbis-shims/ProsperoCDVD.cpp \
+  ./orbis-shims/cpuinfo_stubs.cpp ./orbis-shims/ProsperoMisc.cpp \
+  ./orbis-shims/stubs.cpp ./orbis-shims/ProsperoUI.cpp \
+  ./orbis-shims/ProsperoSaveState.cpp ./orbis-shims/ProsperoAudio.cpp \
+  ./orbis-shims/ProsperoGS.cpp ./orbis-shims/ProsperoNet.cpp \
+  ./orbis-shims/ProsperoZip.cpp ./orbis-shims/ProsperoCrash.cpp \
+  ./orbis-shims/ProsperoDiscord.cpp \
+  ./orbis-shims/dirshim.cpp ./orbis-shims/demo_renderer.cpp \
+  ./orbis-shims/debug_overlay.cpp ./orbis-shims/mmapshim.cpp ./orbis-shims/orbismem.cpp ./orbis-shims/ps5dbgclient.cpp \
+  ./orbis-shims/ProsperoHenJailbreak.cpp ./orbis-shims/filesystem-elevation/src/elevation.cpp \
+  ./orbis-shims/ps5_shaderc.cpp ./orbis-shims/orbis_vk.cpp ./orbis-shims/orbis_eeprof.cpp \
+  ./orbis-shims/game_select.cpp ./orbis-shims/orbis_paths.cpp ./orbis-shims/orbis_memprobe.cpp \
+  ./orbis-shims/ProsperoKbdMouse.cpp ./orbis-shims/ProsperoNotify.cpp \
+  ./orbis-shims/orbis_gs_shaders.cpp
+
+SHIM_ASM := ./orbis-shims/ProsperoTLS.S
+
+# vk-285-40: the frontend (../frontend): the cover-flow shelf of PS2 cases, rendered through the
+# driver before PCSX2 starts. fe_host_main.cpp is its PC preview harness and is not built here.
+FE_DIR := ../frontend
+# (AI-assisted) Optional libnfs 5.0.3 built for the PS5 SDK (see ps5/README.md).
+ifneq ($(strip $(LIBNFS_PREFIX)),)
+CXXFLAGS += -DORBIS_NFS=1 -I$(LIBNFS_PREFIX)/include
+endif
+FE_SRCS := $(FE_DIR)/fe_app.cpp $(FE_DIR)/fe_covers.cpp $(FE_DIR)/fe_games.cpp \
+  $(FE_DIR)/fe_renderer.cpp $(FE_DIR)/fe_sound.cpp $(FE_DIR)/fe_text.cpp $(FE_DIR)/fe_vk.cpp $(FE_DIR)/fe_ps5.cpp \
+  $(FE_DIR)/fe_web.cpp $(FE_DIR)/fe_i18n.cpp $(FE_DIR)/fe_settings.cpp $(FE_DIR)/fe_options.cpp $(FE_DIR)/fe_nfs.cpp
+# vk-285-50: Project Nayuki's QR Code generator (MIT, C) for the shelf's QR tile, and the files
+# fe_ps5.cpp embeds from frontend/assets (the settings page, its icons, Font Awesome's brands font).
+FE_CSRCS := $(FE_DIR)/third_party/qrcodegen/qrcodegen.c
+FE_ASSETS := $(wildcard $(FE_DIR)/assets/web/*) $(wildcard $(FE_DIR)/assets/fonts/*.otf) $(FE_DIR)/assets/presets.ini
+FE_HDRS := $(wildcard $(FE_DIR)/*.h) $(FE_DIR)/fe_shaders.inc $(FE_DIR)/third_party/qrcodegen/qrcodegen.h $(FE_ASSETS)
+
+SRCS := $(SRCS) $(PCSX2)/pcsx2/USB/usb-mic/usb-mic.cpp \
+  $(PCSX2)/pcsx2/USB/usb-mic/usb-headset.cpp \
+  $(PCSX2)/pcsx2/USB/usb-printer/usb-printer.cpp \
+  $(PCSX2)/pcsx2/USB/usb-eyetoy/usb-eyetoy-webcam.cpp \
+  $(PCSX2)/pcsx2/USB/usb-eyetoy/cam-noop.cpp \
+  $(PCSX2)/pcsx2/USB/usb-pad/lg/lg_ff.cpp
+
+PS2_SRCS := $(PCSX2)/pcsx2/ps2/BiosTools.cpp \
+  $(PCSX2)/pcsx2/ps2/pgif.cpp \
+  $(PCSX2)/pcsx2/ps2/Iop/IopHwRead.cpp \
+  $(PCSX2)/pcsx2/ps2/Iop/IopHwWrite.cpp \
+  $(PCSX2)/pcsx2/ps2/Iop/PsxBios.cpp
+
+SRCS := $(SRCS) $(PS2_SRCS)
+
+COMMON_SRCS := $(PCSX2)/common/AlignedMalloc.cpp \
+  $(PCSX2)/common/Console.cpp \
+  $(PCSX2)/common/DynamicLibrary.cpp \
+  $(PCSX2)/common/Error.cpp \
+  $(PCSX2)/common/FastJmp.cpp \
+  $(PCSX2)/common/FileSystem.cpp \
+  $(PCSX2)/common/HTTPDownloader.cpp \
+  $(PCSX2)/common/MemoryInterface.cpp \
+  $(PCSX2)/common/MemorySettingsInterface.cpp \
+  $(PCSX2)/common/MD5Digest.cpp \
+  $(PCSX2)/common/Perf.cpp \
+  $(PCSX2)/common/ProgressCallback.cpp \
+  $(PCSX2)/common/ReadbackSpinManager.cpp \
+  $(PCSX2)/common/Semaphore.cpp \
+  $(PCSX2)/common/SettingsWrapper.cpp \
+  $(PCSX2)/common/SmallString.cpp \
+  $(PCSX2)/common/StringUtil.cpp \
+  $(PCSX2)/common/TextureDecompress.cpp \
+  $(PCSX2)/common/Timer.cpp \
+  $(PCSX2)/common/WAVWriter.cpp \
+  $(PCSX2)/common/Linux/LnxHostSys.cpp \
+  $(PCSX2)/common/Linux/LnxThreads.cpp \
+  $(PCSX2)/common/emitter/bmi.cpp \
+  $(PCSX2)/common/emitter/fpu.cpp \
+  $(PCSX2)/common/emitter/groups.cpp \
+  $(PCSX2)/common/emitter/jmp.cpp \
+  $(PCSX2)/common/emitter/legacy.cpp \
+  $(PCSX2)/common/emitter/legacy_sse.cpp \
+  $(PCSX2)/common/emitter/movs.cpp \
+  $(PCSX2)/common/emitter/simd.cpp \
+  $(PCSX2)/common/emitter/x86emitter.cpp \
+  $(PCSX2)/3rdparty/fmt/src/format.cc
+
+USB_SRCS := $(PCSX2)/pcsx2/USB/USB.cpp \
+  $(PCSX2)/pcsx2/USB/deviceproxy.cpp \
+  $(PCSX2)/pcsx2/USB/qemu-usb/bus.cpp \
+  $(PCSX2)/pcsx2/USB/qemu-usb/core.cpp \
+  $(PCSX2)/pcsx2/USB/qemu-usb/desc.cpp \
+  $(PCSX2)/pcsx2/USB/qemu-usb/hid.cpp \
+  $(PCSX2)/pcsx2/USB/qemu-usb/input-keymap-qcode-to-qnum.cpp \
+  $(PCSX2)/pcsx2/USB/qemu-usb/usb-ohci.cpp \
+  $(PCSX2)/pcsx2/USB/shared/ringbuffer.cpp \
+  $(PCSX2)/pcsx2/USB/usb-hid/usb-hid.cpp \
+  $(PCSX2)/pcsx2/USB/usb-lightgun/guncon2.cpp \
+  $(PCSX2)/pcsx2/USB/usb-msd/usb-msd.cpp \
+  $(PCSX2)/pcsx2/USB/usb-pad/usb-buzz.cpp \
+  $(PCSX2)/pcsx2/USB/usb-pad/usb-gametrak.cpp \
+  $(PCSX2)/pcsx2/USB/usb-pad/usb-realplay.cpp \
+  $(PCSX2)/pcsx2/USB/usb-pad/usb-seamic.cpp \
+  $(PCSX2)/pcsx2/USB/usb-pad/usb-train.cpp \
+  $(PCSX2)/pcsx2/USB/usb-pad/usb-trance-vibrator.cpp \
+  $(PCSX2)/pcsx2/USB/usb-pad/usb-turntable.cpp
+
+SRCS := $(SRCS) $(COMMON_SRCS) $(USB_SRCS) $(PCSX2)/tests/ctest/core/StubHost.cpp
+
+OBJDIR := obj-vk
+ifneq ($(strip $(LIBNFS_PREFIX)),)
+OBJDIR := obj-vk-nfs
+endif
+OBJS := $(patsubst $(PCSX2)/%.cpp,$(OBJDIR)/%.o,$(filter %.cpp,$(SRCS))) \
+  $(patsubst $(PCSX2)/%.cc,$(OBJDIR)/%.o,$(filter %.cc,$(SRCS))) \
+  $(patsubst $(RYML)/%.cpp,$(OBJDIR)/ryml/%.o,$(RYML_SRCS)) \
+  $(patsubst ./%.cpp,$(OBJDIR)/shim/%.o,$(SHIM_SRCS)) \
+  $(patsubst $(PCSX2)/%.c,$(OBJDIR)/%.o,$(C_SRCS)) \
+  $(patsubst ./%.S,$(OBJDIR)/shim/%.o,$(SHIM_ASM)) \
+  $(patsubst $(FE_DIR)/%.cpp,$(OBJDIR)/frontend/%.o,$(FE_SRCS)) \
+  $(patsubst $(FE_DIR)/%.c,$(OBJDIR)/frontend/%.o,$(FE_CSRCS))
+
+# vk-285-108: the CHD code's flags (see CHD_CSRCS): single-threaded LZMA, zstd's C Huffman decoder (its
+# amd64 .S isn't vendored) without the legacy formats or the trace hooks.
+$(patsubst $(PCSX2)/%.c,$(OBJDIR)/%.o,$(CHD_CSRCS)): CFLAGS += $(CHD_INCLUDES) -DZ7_ST \
+  -DZSTD_DISABLE_ASM=1 -DZSTD_LEGACY_SUPPORT=0 -DZSTD_NO_TRACE=1
+$(OBJDIR)/pcsx2/CDVD/ChdFileReader.o $(OBJDIR)/frontend/fe_games.o: CXXFLAGS += -I$(PCSX2)/3rdparty/libchdr/include
+$(OBJDIR)/pcsx2/CDVD/CsoFileReader.o $(OBJDIR)/frontend/fe_games.o: CXXFLAGS += $(CSO_INCLUDES)
+# vk-285-113: the settings page's server thread runs fe_web.cpp's handlers and fe_games.cpp's scans; a 64 KB array in
+# one of them ended the app the first time the page opened. Warn about any frame over 12 KB in them (vk-285-114: and in
+# fe_settings.cpp, the page's file code the options sheet shares).
+$(OBJDIR)/frontend/fe_web.o $(OBJDIR)/frontend/fe_games.o $(OBJDIR)/frontend/fe_settings.o: CXXFLAGS += -Wframe-larger-than=12288
+
+all: $(OBJS)
+	@echo "VK COMPILE OK: $(words $(OBJS)) objects"
+
+# The object list link-vk.sh links (the GL build's conv.sh finds them with find).
+.PHONY: objects.txt
+objects.txt: $(OBJS)
+	@printf '%s\n' $(OBJS) > $@
+
+$(OBJDIR)/%.o: $(PCSX2)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# make has no header-dependency tracking: microVU*.inl are #included via
+# microVU.h, so list them explicitly (a stale microVU.o ships old JIT code).
+$(OBJDIR)/pcsx2/x86/microVU.o: $(PCSX2)/pcsx2/x86/microVU.h $(PCSX2)/pcsx2/x86/microVU_*.inl
+$(OBJDIR)/pcsx2/GS/GS.o: ./include-orbis/GSDeviceOrbis.h
+
+$(OBJDIR)/%.o: $(PCSX2)/%.cc
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# soundtouch throws (ST_THROW_RT_ERROR); keep unwinding on for it alone.
+$(OBJDIR)/3rdparty/soundtouch/%.o: $(PCSX2)/3rdparty/soundtouch/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -fexceptions -c $< -o $@
+
+$(OBJDIR)/pcsx2/Host/AudioStream.o: $(PCSX2)/pcsx2/Host/AudioStream.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -fexceptions -c $< -o $@
+
+$(OBJDIR)/ryml/%.o: $(RYML)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# vk-285-115: the GS shader sources, embedded from PCSX2's bin/resources/shaders (.incbin), for a console with no
+# resources folder. The files are listed so an edited shader rebuilds the object.
+ORBIS_GS_SHADERS := $(wildcard $(PCSX2)/bin/resources/shaders/vulkan/*.glsl) $(wildcard $(PCSX2)/bin/resources/shaders/common/*)
+$(OBJDIR)/shim/orbis-shims/orbis_gs_shaders.o: ./orbis-shims/orbis_gs_shaders.cpp ./include-orbis/OrbisGSShaders.h $(ORBIS_GS_SHADERS)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -DORBIS_GS_SHADER_DIR=\"$(abspath $(PCSX2)/bin/resources/shaders)\" -c $< -o $@
+
+# The shaderc shim includes glslang's C interface.
+$(OBJDIR)/shim/orbis-shims/ps5_shaderc.o: ./orbis-shims/ps5_shaderc.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -I$(GLSLANG) -c $< -o $@
+
+$(OBJDIR)/shim/%.o: ./%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/shim/%.o: ./%.S
+	@mkdir -p $(dir $@)
+	$(CC) -march=znver2 -c $< -o $@
+
+# The frontend: its fonts are embedded from PCSX2's resources (fe_ps5.cpp, .incbin).
+ifneq ($(strip $(LIBCURL_PREFIX)),)
+$(OBJDIR)/frontend/fe_ps5.o: CXXFLAGS += -DORBIS_CURL=1 -DCURL_STATICLIB -I$(LIBCURL_PREFIX)/include
+$(OBJDIR)/frontend/fe_ps5.o: $(FE_DIR)/assets/ca-bundle.crt
+endif
+$(OBJDIR)/frontend/%.o: $(FE_DIR)/%.cpp $(FE_HDRS)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -I$(FE_DIR) -DFE_FONT_DIR=\"$(PCSX2)/bin/resources/fonts\" \
+	  -DFE_ASSET_DIR=\"$(abspath $(FE_DIR)/assets)\" -c $< -o $@
+
+$(OBJDIR)/frontend/%.o: $(FE_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) -O2 -DNDEBUG -march=znver2 -std=c99 -c $< -o $@
+
+$(OBJDIR)/%.o: $(PCSX2)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+-include $(OBJS:.o=.d)
+
+clean:
+	rm -rf $(OBJDIR) objects.txt
+
+.PHONY: all clean

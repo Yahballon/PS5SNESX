@@ -1,0 +1,8 @@
+PS5NES v3 (AI-assisted)
+Loading frame is presented and splash hidden before background NFS scan starts.
+Thread-local callbacks isolate boot progress from web-server scans.
+Slow 240-ROM NFS mock: live counters, responsive snapshots, source deduplication and isolation passed.
+Actual original Vulkan UI loading screen rendered and visually inspected.
+NES ROM/ZIP/controller/audio/SRAM/state/PAL tests passed.
+Signed eboot integrity valid; zero non-stub undefined imports; ZIP CRC/SHA256 verified.
+Not run on PS5 hardware yet.

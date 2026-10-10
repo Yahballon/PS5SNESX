@@ -1,0 +1,2883 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b22">
+<title>PS5SNES</title>
+<link rel="icon" href="data:,">
+<!--
+  PS5SX2's settings page (vk-285-50; Recommended button vk-285-51), served by the console itself
+  (frontend/fe_web.cpp).
+  Copyright (C) 2026 Spyros. SPDX-License-Identifier: GPL-3.0-or-later.
+  The Discord and X icons are Font Awesome Free 7.3.1 (CC BY 4.0, https://fontawesome.com);
+  the logos are their owners' trademarks and only point to the author's accounts.
+-->
+<style>
+@font-face { font-family: "Roboto"; src: url("/fonts/roboto.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+:root {
+  --bg-top: #09090c; --bg-mid: #13111b; --bg-bottom: #030305;
+  --house: 158, 128, 219;
+  --glow: 158, 128, 219;
+  --text: #ffffff; --dim: #c7c7cc; --faint: #96969e;
+  --card: rgba(255, 255, 255, 0.055); --card-line: rgba(255, 255, 255, 0.09);
+  --pill: rgba(255, 255, 255, 0.12);
+  --accent: rgb(194,173,245);
+  --ink: #171719;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font-family: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text); font-size: 16px; line-height: 1.35;
+  background: var(--bg-bottom);
+  overflow-x: hidden;
+}
+/* The shelf's background: a deep blue-violet gradient with a soft glow tinted by the picked cover. */
+.backdrop {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(60vmax 42vmax at 50% 30%, rgba(var(--glow), 0.34), rgba(var(--glow), 0.08) 45%, transparent 70%),
+    radial-gradient(40vmax 10vmax at 50% 64%, rgba(var(--glow), 0.10), transparent 70%),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 42%, var(--bg-bottom) 100%);
+  transition: background 0.6s ease;
+}
+.wrap { max-width: 760px; margin: 0 auto; padding: max(18px, env(safe-area-inset-top)) 16px 40px; }
+
+header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.wordmark { font-size: 30px; font-weight: 700; letter-spacing: 0.3px; line-height: 1; }
+.wordmark span { color: var(--accent); }
+.handles { display: flex; gap: 16px; margin-top: 9px; color: var(--faint); font-size: 14px; flex-wrap: wrap; }
+.handle { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none;
+          background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.handle:hover, .handle:focus-visible { color: var(--dim); outline: none; }
+.icon { width: 15px; height: 15px; display: inline-block; background-color: currentColor;
+        -webkit-mask: var(--src) center / contain no-repeat; mask: var(--src) center / contain no-repeat; }
+.icon.discord { --src: url("/icons/discord.svg"); width: 17px; }
+.icon.x { --src: url("/icons/x-twitter.svg"); width: 13px; }
+.clock { font-size: 22px; color: var(--dim); padding-top: 3px; font-variant-numeric: tabular-nums; }
+
+/* Now playing */
+.now { margin-top: 22px; display: none; align-items: center; gap: 14px; padding: 12px; border-radius: 16px;
+       background: var(--card); border: 1px solid var(--card-line); }
+.now.show { display: flex; }
+.now img { width: 46px; height: 66px; object-fit: cover; border-radius: 4px; box-shadow: 0 4px 14px rgba(0,0,0,0.5); }
+.now .k { font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; color: rgb(var(--glow)); filter: brightness(1.5); }
+.now .t { font-size: 17px; font-weight: 700; margin-top: 2px; }
+.now .s { font-size: 13px; color: var(--dim); margin-top: 2px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #5cf2a0; margin-right: 6px;
+       box-shadow: 0 0 10px #5cf2a0; animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+
+/* The cover flow: the shelf's 58-degree turn, in CSS 3D. */
+.flow-wrap { position: relative; margin: 18px -16px 0; perspective: 900px; }
+.flow { display: flex; gap: 0; overflow-x: auto; scroll-snap-type: x mandatory; padding: 26px 0 56px;
+        scrollbar-width: none; -webkit-overflow-scrolling: touch; transform-style: preserve-3d; }
+.flow::-webkit-scrollbar { display: none; }
+.pad { flex: 0 0 calc(50% - 70px); }
+.case { flex: 0 0 140px; height: 200px; scroll-snap-align: center; position: relative; transform-style: preserve-3d;
+        cursor: pointer; transition: transform 0.08s linear; }
+.case .front { position: absolute; inset: 0; border-radius: 5px; overflow: hidden; background: #1c1a33;
+               box-shadow: 0 10px 26px rgba(0,0,0,0.55); -webkit-box-reflect: below 6px linear-gradient(transparent 62%, rgba(255,255,255,0.22)); }
+.case .front img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.case .ph { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 12px;
+            text-align: center; font-size: 13px; color: var(--dim);
+            background: linear-gradient(160deg, #2a2550, #141228); }
+.case .ph b { color: var(--text); font-size: 15px; margin-bottom: 6px; }
+.case.sel .front { outline: 2px solid rgba(255,255,255,0.85); outline-offset: 5px;
+                   box-shadow: 0 0 0 1px rgba(var(--glow),0.3), 0 0 26px rgba(var(--glow),0.55), 0 10px 26px rgba(0,0,0,0.55); }
+.case .live { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); font-size: 11px; white-space: nowrap;
+              padding: 3px 9px; border-radius: 99px; background: #5cf2a0; color: #0a2418; font-weight: 700; letter-spacing: 0.5px; }
+
+.gametitle { text-align: center; font-size: 24px; font-weight: 700; margin-top: -14px; }
+.gameinfo { text-align: center; color: var(--dim); font-size: 14px; margin-top: 6px; display: flex; gap: 8px;
+            justify-content: center; align-items: center; flex-wrap: wrap; }
+.pillb { background: var(--pill); border-radius: 99px; padding: 2px 10px; font-size: 12px; color: var(--text); font-weight: 700; }
+.all { display: block; margin: 16px auto 0; background: none; border: 1px solid var(--card-line); color: var(--dim);
+       border-radius: 99px; padding: 7px 16px; font: inherit; font-size: 14px; cursor: pointer; }
+.all.on { color: var(--text); border-color: rgba(255,255,255,0.5); }
+
+/* Settings */
+.sec { margin-top: 20px; }
+.sec h2 { font-size: 13px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--faint); font-weight: 700;
+          margin: 0 0 8px 4px; }
+.card { background: var(--card); border: 1px solid var(--card-line); border-radius: 18px; overflow: hidden; }
+.row { padding: 14px 14px 15px; border-top: 1px solid var(--card-line); }
+.row:first-child { border-top: 0; }
+.row .head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.row .label { font-size: 16px; }
+.row .from { font-size: 12px; color: var(--faint); white-space: nowrap; }
+.row .from button { background: none; border: 0; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; padding: 0 0 0 6px; }
+.row .hint { font-size: 13px; color: var(--faint); margin-top: 4px; }
+.tag { font-size: 11px; color: #ffcf7a; border: 1px solid rgba(255,207,122,0.4); border-radius: 99px; padding: 1px 7px;
+       margin-left: 6px; vertical-align: 1px; white-space: nowrap; display: inline-block; }
+/* One row, equal columns: --n is the number of choices. */
+.seg { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.seg button { min-width: 0; padding: 9px 2px; border-radius: 11px; border: 1px solid transparent; white-space: nowrap;
+              overflow: hidden; text-overflow: clip; background: rgba(255,255,255,0.07); color: var(--dim);
+              font: inherit; font-size: 14px; cursor: pointer; transition: background 0.15s, color 0.15s, box-shadow 0.15s; }
+.seg.many button { font-size: 13px; }
+/* The value this game sets: filled. One it inherits (all games or PCSX2's default): outlined. */
+.seg button.cur { background: rgba(255,255,255,0.92); color: var(--ink); font-weight: 700;
+                  box-shadow: 0 0 16px rgba(var(--glow),0.45); }
+.seg button.cur.inh { background: rgba(255,255,255,0.08); color: var(--text); border-color: rgba(255,255,255,0.6);
+                      box-shadow: none; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sw { position: relative; width: 50px; height: 30px; flex: 0 0 auto; border-radius: 99px; background: rgba(255,255,255,0.14);
+      border: 0; cursor: pointer; transition: background 0.2s; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+             background: #fff; transition: transform 0.2s; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+.sw.on { background: rgb(var(--glow)); box-shadow: 0 0 14px rgba(var(--glow),0.6); }
+.sw.on.inh { background: rgba(var(--glow),0.45); box-shadow: none; }
+.sw.on::after { transform: translateX(20px); }
+.empty { padding: 14px; color: var(--faint); font-size: 14px; }
+/* Recommended settings (vk-285-51): what the port was tuned with, one tap (and a second to confirm) away. */
+.rec { margin-top: 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 12px 12px 14px;
+       border-radius: 18px; background: linear-gradient(135deg, rgba(var(--glow),0.20), rgba(255,255,255,0.04));
+       border: 1px solid rgba(var(--glow),0.5); }
+.rec.ok { background: var(--card); border-color: var(--card-line); }
+.rec .rt { font-weight: 700; font-size: 15px; }
+.rec .rs { font-size: 13px; color: var(--dim); margin-top: 3px; }
+.recbtn { flex: 0 0 auto; border: 0; border-radius: 99px; padding: 9px 16px; font: inherit; font-size: 14px; font-weight: 700;
+          cursor: pointer; background: rgba(255,255,255,0.92); color: var(--ink); box-shadow: 0 0 16px rgba(var(--glow),0.45);
+          transition: background 0.15s; white-space: nowrap; }
+.recbtn.armed { background: #ffcf7a; box-shadow: 0 0 16px rgba(255,207,122,0.5); }
+.recbtn:disabled { background: none; color: #5cf2a0; box-shadow: none; cursor: default; padding: 9px 4px 9px 8px; }
+.file { text-align: center; color: var(--faint); font-size: 12px; margin-top: 12px; }
+/* vk-285-116: the Settings and Controls tabs, a group's line under its title, a list row (the remapping). */
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; max-width: 340px; margin: 14px auto 0; padding: 4px;
+        border-radius: 99px; background: rgba(255,255,255,0.06); border: 1px solid var(--card-line); }
+.tabs button { border: 0; border-radius: 99px; padding: 8px 10px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+               background: none; color: var(--dim); transition: background 0.15s, color 0.15s, box-shadow 0.15s; }
+.tabs button.on { background: rgba(255,255,255,0.92); color: var(--ink); box-shadow: 0 0 16px rgba(var(--glow),0.45); }
+.ghint { font-size: 13px; color: var(--faint); margin: -2px 4px 10px; }
+.prow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.prow .pl { min-width: 0; }
+.prow .pick { width: 56%; flex: 0 0 auto; margin-top: 0; padding: 8px 10px; }
+.pick.moved { border-color: rgba(var(--glow),0.75); box-shadow: 0 0 10px rgba(var(--glow),0.25); }
+.pick.inh { color: var(--dim); }
+.btnrow.center { justify-content: center; margin-top: 14px; }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 10px; }
+.pair .pick { margin-top: 0; padding: 8px 10px; }
+.pair .plus { color: var(--faint); font-weight: 700; }
+.file button { background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer; }
+
+/* Test build 1 (vk-285-55): the testing banner and the problem report. */
+.testing { margin-top: 18px; padding: 10px 14px; border-radius: 14px; border: 1px solid rgba(255,207,122,0.45);
+           background: rgba(255,207,122,0.08); color: #ffcf7a; font-size: 14px; display: flex; justify-content: space-between;
+           align-items: center; gap: 10px; }
+.testing b { letter-spacing: 1.2px; }
+.testing a { color: #ffcf7a; font-weight: 700; white-space: nowrap; }
+.report textarea { display: block; width: 100%; margin-top: 10px; min-height: 86px; resize: vertical; border-radius: 12px;
+                   border: 1px solid var(--card-line); background: rgba(255,255,255,0.06); color: var(--text);
+                   font: inherit; font-size: 15px; padding: 10px 12px; }
+.report textarea::placeholder { color: var(--faint); }
+.report textarea:focus { outline: none; border-color: rgba(var(--glow),0.7); box-shadow: 0 0 0 3px rgba(var(--glow),0.18); }
+/* vk-285-113: a memory card slot's picker, the new card's name. */
+.pick, .txt { display: block; width: 100%; margin-top: 10px; border-radius: 12px; border: 1px solid var(--card-line);
+              background: rgba(255,255,255,0.06); color: var(--text); font: inherit; font-size: 15px; padding: 10px 12px;
+              color-scheme: dark; }
+.pick option { background: #1b1838; color: #fff; }
+.txt::placeholder { color: var(--faint); }
+.pick:focus, .txt:focus { outline: none; border-color: rgba(var(--glow),0.7); box-shadow: 0 0 0 3px rgba(var(--glow),0.18); }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btnrow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.btn { border: 0; border-radius: 99px; padding: 9px 16px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+       text-decoration: none; display: inline-flex; align-items: center; }
+.btn.primary { background: rgba(255,255,255,0.92); color: var(--ink); box-shadow: 0 0 16px rgba(var(--glow),0.45); }
+.btn.ghost { background: rgba(255,255,255,0.08); color: var(--text); border: 1px solid var(--card-line); }
+
+footer { margin-top: 34px; color: var(--faint); font-size: 12px; text-align: center; line-height: 1.6; }
+footer a { color: var(--dim); }
+
+.toast { position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); transform: translate(-50%, 30px);
+         opacity: 0; transition: 0.25s; background: rgba(20,18,44,0.96); border: 1px solid var(--card-line);
+         color: var(--text); padding: 10px 16px; border-radius: 99px; font-size: 14px; white-space: nowrap;
+         box-shadow: 0 8px 30px rgba(0,0,0,0.5), 0 0 20px rgba(var(--glow),0.25); pointer-events: none; z-index: 5; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.hide { display: none !important; }
+@media (min-width: 700px) {
+  .case { flex-basis: 170px; height: 242px; }
+  .pad { flex-basis: calc(50% - 85px); }
+  .wordmark { font-size: 36px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="backdrop" id="backdrop"></div>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="wordmark">PS5<span>SNES</span></div>
+      <div class="handles">
+        <button class="handle" id="discord" title="Copy the Discord username"><i class="icon discord"></i>sword.pdf</button>
+        <a class="handle" href="https://x.com/sword_pdf" target="_blank" rel="noopener"><i class="icon x"></i>@sword_pdf</a>
+      </div>
+    </div>
+    <div class="clock" id="clock"></div>
+  </header>
+
+  <main id="main" class="hide">
+    <div class="testing hide" id="testing"><span><b>TESTING</b> · <span id="testlabel"></span></span><a href="#report">Report a problem</a></div>
+    <div class="now" id="now">
+      <img id="nowcover" alt="">
+      <div>
+        <div class="k"><span class="dot"></span>Now playing</div>
+        <div class="t" id="nowtitle"></div>
+        <div class="s">Settings apply when the game is started again.</div>
+      </div>
+    </div>
+
+    <div class="flow-wrap"><div class="flow" id="flow"></div></div>
+    <div class="gametitle" id="gtitle"></div>
+    <div class="gameinfo" id="ginfo"></div>
+    <button class="all" id="allgames">Settings for all games</button>
+    <div class="tabs" id="tabs"><button data-tab="settings">Settings</button><button data-tab="controls">Controls</button></div>
+
+    <div id="settings"></div>
+    <div class="file" id="file"></div>
+
+    <div class="sec report" id="report">
+      <h2>Report a problem</h2>
+      <div class="card"><div class="row">
+        <div class="label">What went wrong?</div>
+        <div class="hint">Say what happened, then download the logs and post the file in the Discord. Your note goes into the logs with the time.</div>
+        <textarea id="note" maxlength="1500" placeholder="For example: froze after the first cutscene, the sound kept playing"></textarea>
+        <div class="btnrow">
+          <button class="btn ghost" id="savenote">Add note</button>
+          <a class="btn primary" id="dllogs" href="#">Download logs</a>
+        </div>
+      </div></div>
+    </div>
+  </main>
+
+  <footer>
+    <div><b style="color:var(--dim)">PS5SNES</b> · SNES for jailbroken PS5 · modded by YAHBALLON · <span id="build"></span></div>
+    <div>Based on PS5SX2 frontend by Spyros and bsnes-mercury (GPL). Not affiliated with or endorsed by the PCSX2 team or Sony Interactive Entertainment.</div>
+    <div>Icons: Font Awesome Free (CC BY 4.0). Covers: xlenore/ps2-covers.</div>
+  </footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+// ---- What the page offers. The keys are the port's ini keys (a bare key lives in EmuCore/GS);
+// "def" is PCSX2's own default, shown when neither the game nor gs.ini sets it.
+const CROP_PX = [["0","Off"],["2","2 px"],["4","4 px"],["6","6 px"],["8","8 px"],["10","10 px"],["12","12 px"],["16","16 px"],
+                 ["24","24 px"],["32","32 px"]];
+const CROP_HINT = "Cuts this many PS2 pixels off this side of the picture, for games with garbage at a border (Shadow of the Colossus). The picture keeps its proportions.";
+// vk-285-116 (AI-assisted): what a controller button can press in games (ps5/coreorbis/orbis-shims/OrbisPadMap.h's names),
+// as the sheet's ButtonChoices() (frontend/fe_options.cpp). Applied while the game runs.
+const BUTTON_TARGETS = [["Cross","Cross"],["Circle","Circle"],["Square","Square"],["Triangle","Triangle"],["L1","L1"],["R1","R1"],
+  ["L2","L2"],["R2","R2"],["L3","L3"],["R3","R3"],["Start","Start"],["Select","Select"],["Up","D-pad up"],["Down","D-pad down"],
+  ["Left","D-pad left"],["Right","D-pad right"],["Analog","Analog button"],["Pressure","Light press"],["None","Nothing"]];
+const button = (name, label, def) => ({ key: "PS5SX2/Button" + name, label, type: "pick", def, options: BUTTON_TARGETS });
+// vk-285-118: how hard each button presses (OrbisPadMap.h Config::pressure), as the sheet's StrengthChoices().
+// vk-285-118: the sticks' dead zones (OrbisPadMap.h Config::deadzone_left/right), as the sheet's DeadzoneChoices().
+const DEADZONES = [["0","Off"],["5","5%"],["10","10%"],["15","15%"],["20","20%"],["25","25%"],["30","30%"]];
+const STRENGTHS = [["1","Full"],["0.75","75%"],["0.5","50%"],["0.4","40%"],["0.3","30%"],["0.25","25%"],["0.2","20%"],["0.15","15%"],["0.1","10%"]];
+const strength = (name, label) => ({ key: "PS5SX2/Button" + name + "Pressure", label, type: "pick", def: "1", options: STRENGTHS });
+const INVERT = [["0","Off"],["1","Up-down"],["2","Left-right"],["3","Both"]];
+// vk-285-117: what a save or load button can be (OrbisPadMap.h ComboButtonName), as the sheet's ComboChoices().
+const COMBO_BUTTONS = [["L3R3","L3 + R3"],["Cross","Cross"],["Circle","Circle"],["Square","Square"],["Triangle","Triangle"],["L1","L1"],
+  ["R1","R1"],["L2","L2"],["R2","R2"],["L3","L3"],["R3","R3"],["Options","Options"],["Touchpad","Touchpad click"],
+  ["TouchLeft","Touchpad left"],["TouchRight","Touchpad right"],["Up","D-pad up"],["Down","D-pad down"],["Left","D-pad left"],
+  ["Right","D-pad right"],["None","Nothing"]];
+// A save or load combo: two lists in one row on this page ("pair": the row's name; the sheet has a row for each button).
+const combo = (key, label, def, pair) => ({ key: "PS5SX2/" + key, label, type: "pick", def, options: COMBO_BUTTONS, pair });
+// (AI-assisted) SNES options in the original PS5SX2 web layout.
+const GROUPS = [
+  {
+    "title": "Emulation",
+    "items": [
+      {
+        "key": "SNES/Region",
+        "label": "Region",
+        "type": "seg",
+        "def": "auto",
+        "options": [
+          [
+            "auto",
+            "Automatic"
+          ],
+          [
+            "ntsc",
+            "NTSC"
+          ],
+          [
+            "pal",
+            "PAL"
+          ]
+        ]
+      },
+      {
+        "key": "SNES/ChipMode",
+        "label": "Special-chip emulation",
+        "type": "seg",
+        "def": "HLE",
+        "options": [
+          [
+            "HLE",
+            "High-level"
+          ],
+          [
+            "LLE",
+            "Firmware-based"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Display",
+    "items": [
+      {
+        "key": "SNES/Aspect",
+        "label": "Picture",
+        "type": "seg",
+        "def": "4:3",
+        "options": [
+          [
+            "4:3",
+            "4:3"
+          ],
+          [
+            "Integer",
+            "Integer pixels"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Audio",
+    "items": [
+      {
+        "key": "SNES/Sound",
+        "label": "Game sound",
+        "type": "toggle",
+        "def": "true"
+      }
+    ]
+  },
+  {
+    "title": "SNES buttons",
+    "tab": "controls",
+    "items": [
+      {
+        "key": "SNES/ButtonA",
+        "label": "SNES A",
+        "type": "pick",
+        "def": "Circle",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonB",
+        "label": "SNES B",
+        "type": "pick",
+        "def": "Cross",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonX",
+        "label": "SNES X",
+        "type": "pick",
+        "def": "Triangle",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonY",
+        "label": "SNES Y",
+        "type": "pick",
+        "def": "Square",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonL",
+        "label": "SNES L",
+        "type": "pick",
+        "def": "L1",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonR",
+        "label": "SNES R",
+        "type": "pick",
+        "def": "R1",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonStart",
+        "label": "SNES Start",
+        "type": "pick",
+        "def": "Options",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonSelect",
+        "label": "SNES Select",
+        "type": "pick",
+        "def": "Touchpad/Create",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonUp",
+        "label": "SNES Up",
+        "type": "pick",
+        "def": "Up",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonDown",
+        "label": "SNES Down",
+        "type": "pick",
+        "def": "Down",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonLeft",
+        "label": "SNES Left",
+        "type": "pick",
+        "def": "Left",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/ButtonRight",
+        "label": "SNES Right",
+        "type": "pick",
+        "def": "Right",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true
+      },
+      {
+        "key": "SNES/LeftStickDpad",
+        "label": "Left stick as D-pad",
+        "type": "toggle",
+        "def": "true",
+        "restart": true
+      }
+    ]
+  },
+  {
+    "title": "Save state",
+    "tab": "controls",
+    "items": [
+      {
+        "key": "SNES/SaveButton1",
+        "label": "Button 1",
+        "type": "pick",
+        "def": "L3R3",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true,
+        "hint": "Hold these buttons together. None skips a button."
+      },
+      {
+        "key": "SNES/SaveButton2",
+        "label": "Button 2",
+        "type": "pick",
+        "def": "Up",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true,
+        "hint": "Hold these buttons together. None skips a button."
+      },
+      {
+        "key": "SNES/SaveButton3",
+        "label": "Button 3",
+        "type": "pick",
+        "def": "None",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true,
+        "hint": "Hold these buttons together. None skips a button."
+      }
+    ]
+  },
+  {
+    "title": "Load state",
+    "tab": "controls",
+    "items": [
+      {
+        "key": "SNES/LoadButton1",
+        "label": "Button 1",
+        "type": "pick",
+        "def": "L3R3",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true,
+        "hint": "Hold these buttons together. None skips a button."
+      },
+      {
+        "key": "SNES/LoadButton2",
+        "label": "Button 2",
+        "type": "pick",
+        "def": "Down",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true,
+        "hint": "Hold these buttons together. None skips a button."
+      },
+      {
+        "key": "SNES/LoadButton3",
+        "label": "Button 3",
+        "type": "pick",
+        "def": "None",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true,
+        "hint": "Hold these buttons together. None skips a button."
+      }
+    ]
+  },
+  {
+    "title": "Back to menu",
+    "tab": "controls",
+    "items": [
+      {
+        "key": "SNES/MenuButton1",
+        "label": "Button 1",
+        "type": "pick",
+        "def": "L1",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true,
+        "hint": "Hold these buttons together. None skips a button."
+      },
+      {
+        "key": "SNES/MenuButton2",
+        "label": "Button 2",
+        "type": "pick",
+        "def": "R1",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true,
+        "hint": "Hold these buttons together. None skips a button."
+      },
+      {
+        "key": "SNES/MenuButton3",
+        "label": "Button 3",
+        "type": "pick",
+        "def": "Touchpad",
+        "options": [
+          [
+            "None",
+            "None"
+          ],
+          [
+            "Cross",
+            "Cross"
+          ],
+          [
+            "Circle",
+            "Circle"
+          ],
+          [
+            "Square",
+            "Square"
+          ],
+          [
+            "Triangle",
+            "Triangle"
+          ],
+          [
+            "Options",
+            "Options"
+          ],
+          [
+            "Touchpad",
+            "Touchpad click"
+          ],
+          [
+            "Create",
+            "Create"
+          ],
+          [
+            "Touchpad/Create",
+            "Touchpad / Create"
+          ],
+          [
+            "L1",
+            "L1"
+          ],
+          [
+            "R1",
+            "R1"
+          ],
+          [
+            "L2",
+            "L2"
+          ],
+          [
+            "R2",
+            "R2"
+          ],
+          [
+            "L3",
+            "L3"
+          ],
+          [
+            "R3",
+            "R3"
+          ],
+          [
+            "Up",
+            "D-pad Up"
+          ],
+          [
+            "Down",
+            "D-pad Down"
+          ],
+          [
+            "Left",
+            "D-pad Left"
+          ],
+          [
+            "Right",
+            "D-pad Right"
+          ],
+          [
+            "L3R3",
+            "L3 + R3"
+          ],
+          [
+            "L1R1",
+            "L1 + R1"
+          ]
+        ],
+        "restart": true,
+        "hint": "Hold these buttons together. None skips a button."
+      }
+    ]
+  }
+];
+
+// ---- vk-285-113: memory cards. The files in memcards/ and a form that makes a blank one of 8, 16, 32 or 64 MB. Which card
+// sits in a slot is an ordinary setting (MemoryCards/Slot1_Filename), this game's or all games'; the core swaps cards in a
+// running game (the game sees one taken out and put in).
+const SLOTS = [
+  { n: 1, file: "MemoryCards/Slot1_Filename", on: "MemoryCards/Slot1_Enable", def: "Mcd001.ps2" },
+  { n: 2, file: "MemoryCards/Slot2_Filename", on: "MemoryCards/Slot2_Enable", def: "Mcd002.ps2" },
+];
+let cards = null;   // /api/memcards
+let mcdSize = 16;   // the size picked in the form
+let mcdName = "";   // and the name typed
+let mcdBusy = false;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let games = [];
+let state = { mode: "menu", playing: null };
+let current = null;      // the game id shown, or "@global"
+let data = null;         // /api/settings for it
+let pending = new Map(); // key -> value | null (unset), sent after a short pause
+let saveTimer = 0;
+let recArmed = 0;        // the Recommended button's wait for its second tap
+let ctlArmed = 0;        // vk-285-116: the controls' reset button's
+let tab = "settings";    // vk-285-116: the tab shown, "settings" or "controls" (kept in this browser)
+try { if (localStorage.getItem("ps5sx2.tab") === "controls") tab = "controls"; } catch (e) {}
+
+// vk-285-118: no key any more: the console's address is enough (fe_web.cpp refuses other sites' requests instead). An old
+// bookmark's ?t= is dropped from the address bar.
+(function () {
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.has("t")) { u.searchParams.delete("t"); history.replaceState(null, "", u.pathname + u.search); }
+    localStorage.removeItem("ps5sx2.token");
+  } catch (e) {}
+})();
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const cover = (id) => "/api/cover?id=" + encodeURIComponent(id);
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+// ---- The clock, like the shelf's.
+function tick() { const d = new Date(); $("clock").textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+tick(); setInterval(tick, 10000);
+
+// ---- The glow takes the picked cover's colour, mixed with the house violet as on the shelf.
+function glowFrom(img) {
+  try {
+    const c = document.createElement("canvas"); c.width = 24; c.height = 34;
+    const g = c.getContext("2d"); g.drawImage(img, 0, 0, 24, 34);
+    const px = g.getImageData(0, 0, 24, 34).data;
+    let r = 0, gr = 0, b = 0, w = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      const mx = Math.max(px[i], px[i + 1], px[i + 2]), mn = Math.min(px[i], px[i + 1], px[i + 2]);
+      const sat = mx ? (mx - mn) / mx : 0, weight = 0.15 + sat * sat * (mx / 255);
+      r += px[i] * weight; gr += px[i + 1] * weight; b += px[i + 2] * weight; w += weight;
+    }
+    r /= w; gr /= w; b /= w;
+    const m = Math.max(r, gr, b, 1), k = 255 / m; // full brightness, the hue kept
+    const mix = (a, h) => Math.round(a * k * 0.65 + h * 0.35);
+    setGlow(mix(r, 140) + ", " + mix(gr, 107) + ", " + mix(b, 255));
+  } catch (e) { setGlow("158, 128, 219"); }
+}
+function setGlow(v) { document.documentElement.style.setProperty("--glow", v); }
+
+// ---- The cover flow.
+function buildFlow() {
+  const flow = $("flow");
+  flow.innerHTML = '<div class="pad"></div>' + games.map((g, i) =>
+    '<div class="case" data-i="' + i + '"><div class="front">' +
+    (g.cover ? '<img loading="lazy" alt="" src="' + cover(g.id) + '">'
+             : '<div class="ph"><b>' + esc(g.title) + '</b>' + esc(g.serial) + '</div>') +
+    '</div>' + (g.playing ? '<div class="live">PLAYING</div>' : "") + '</div>').join("") + '<div class="pad"></div>';
+  flow.querySelectorAll(".case").forEach((el) => el.addEventListener("click", () => {
+    const i = +el.dataset.i;
+    if (current === games[i].id) return;
+    scrollToGame(i, true);
+  }));
+  flow.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+}
+function caseCentre(el) { return el.offsetLeft + el.offsetWidth / 2; }
+function scrollToGame(i, smooth) {
+  const flow = $("flow"), el = flow.querySelectorAll(".case")[i];
+  if (el) flow.scrollTo({ left: caseCentre(el) - flow.clientWidth / 2, behavior: smooth ? "smooth" : "auto" });
+}
+let settleTimer = 0;
+function onScroll() {
+  const flow = $("flow"), mid = flow.scrollLeft + flow.clientWidth / 2;
+  let best = -1, bestD = 1e9;
+  flow.querySelectorAll(".case").forEach((el) => {
+    const w = el.offsetWidth, d = (caseCentre(el) - mid) / w, ad = Math.min(Math.abs(d), 3);
+    const e = Math.min(ad, 1) * Math.min(ad, 1) * (3 - 2 * Math.min(ad, 1)); // smoothstep, as Pose()
+    const s = d < 0 ? -1 : 1;
+    const turn = -s * 58 * e, z = -e * 70 - Math.max(ad - 1, 0) * 30, x = -s * e * w * 0.28;
+    el.style.transform = "translateX(" + x.toFixed(1) + "px) translateZ(" + z.toFixed(1) + "px) rotateY(" + turn.toFixed(1) + "deg)";
+    el.style.zIndex = String(100 - Math.round(ad * 10));
+    el.style.opacity = String(Math.max(0.35, 1 - Math.max(ad - 1, 0) * 0.25));
+    if (Math.abs(d) < bestD) { bestD = Math.abs(d); best = +el.dataset.i; }
+  });
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => { if (best >= 0 && games[best] && current !== games[best].id) select(games[best].id); }, 140);
+}
+
+// ---- A game's settings.
+async function select(id) {
+  current = id;
+  pending.clear();
+  clearTimeout(recArmed); recArmed = 0;
+  clearTimeout(ctlArmed); ctlArmed = 0;
+  $("allgames").classList.toggle("on", id === "@global");
+  document.querySelectorAll(".case").forEach((el) => el.classList.toggle("sel", games[+el.dataset.i] && games[+el.dataset.i].id === id));
+  const g = games.find((x) => x.id === id);
+  if (g) {
+    $("gtitle").textContent = g.title;
+    const bits = [g.serial, g.region, (g.size / 1e9).toFixed(1) + " GB"].filter(Boolean).map(esc);
+    $("ginfo").innerHTML = bits.join(" · ") + g.badges.map((b) => ' <span class="pillb">' + esc(b) + "</span>").join("");
+    const img = document.querySelector('.case.sel img');
+    if (img) { if (img.complete) glowFrom(img); else img.onload = () => glowFrom(img); } else setGlow("158, 128, 219");
+  } else {
+    $("gtitle").textContent = "All games";
+    $("ginfo").textContent = "gs.ini: the defaults every game starts from";
+    setGlow("158, 128, 219");
+  }
+  try {
+    data = await api("/api/settings?id=" + encodeURIComponent(id));
+    if (current === id) render();
+    loadCards(); // vk-285-113: the list may have changed (a card copied in); it draws again only when it has
+  } catch (e) { toast("Couldn't load the settings: " + e.message); }
+}
+
+function effective(item) {
+  const own = data.values[item.key];
+  if (own !== undefined) return { v: own, from: "own" };
+  if (data.id !== "@global" && data.global[item.key] !== undefined) return { v: data.global[item.key], from: "global" };
+  if (item.key === "SNES/ButtonA" || item.key === "SNES/ButtonB") {
+    const ownSwap = data.values["SNES/SwapAB"];
+    const inherited = data.id !== "@global" ? data.global["SNES/SwapAB"] : undefined;
+    if ((ownSwap !== undefined ? ownSwap : inherited) === "true")
+      return {v:item.key === "SNES/ButtonA" ? "Circle" : "Cross",from:ownSwap !== undefined ? "own" : "global"};
+  }
+  return { v: item.def, from: "default" };
+}
+const truthy = (v) => v === "true" || v === "1";
+function optLabel(item, v) {
+  if (item.type === "toggle") return truthy(v) ? "on" : "off";
+  const o = item.options.find((o) => o[0] === v || parseFloat(o[0]) === parseFloat(v) ||
+                                     (item.type === "pick" && o[0].toLowerCase() === String(v).trim().toLowerCase()));
+  return o ? o[1] : v;
+}
+
+// What the Recommended button sets, in a line: "6x · Widescreen on · EE 100% · MTVU off".
+function recSummary() {
+  const r = data.recommended;
+  if (!r.found && data.id !== "@global") return "Nothing tuned for this game yet: it follows the settings for all games.";
+  const bits = [];
+  for (const it of GROUPS.flatMap((g) => g.items)) {
+    const v = r.values[it.key];
+    if (v !== undefined && it.short) bits.push(it.short.replace("%", optLabel(it, v)));
+  }
+  for (const p of r.patches) bits.push(p + " patch");
+  return bits.length ? bits.join(" · ") : "Follows the settings for all games.";
+}
+
+function render() {
+  const isGlobal = data.id === "@global";
+  const playingHere = state.playing && state.playing.id === data.id;
+  let html = "";
+  const r = data.recommended;
+  if (tab === "settings" && r && (r.found || !isGlobal)) {
+    const inUse = data.is_recommended;
+    html += '<div class="rec' + (inUse ? " ok" : "") + '"><div><div class="rt">Recommended' + (isGlobal ? " for all games" : "") +
+      '</div><div class="rs">' + esc(recSummary()) + '</div></div><button id="recbtn" class="recbtn' + (recArmed ? " armed" : "") + '"' +
+      (inUse ? " disabled" : "") + ">" + (inUse ? "\u2713 In use" : recArmed ? "Tap again" : "Use") + "</button></div>";
+  }
+  for (const grp of GROUPS) {
+    if ((grp.tab || "settings") !== tab) continue; // vk-285-116
+    html += '<div class="sec"><h2>' + esc(grp.title) + "</h2>" + (grp.hint ? '<div class="ghint">' + esc(grp.hint) + "</div>" : "") +
+      '<div class="card">';
+    for (const it of grp.items) {
+      const eff = effective(it);
+      let from = "";
+      if (eff.from === "own" && !isGlobal) from = 'this game <button data-reset="' + esc(it.key) + '">reset</button>';
+      else if (eff.from === "own") from = 'set <button data-reset="' + esc(it.key) + '">reset</button>';
+      else if (eff.from === "global") from = "all games";
+      else from = "default";
+      const tag = it.restart ? '<span class="tag">next launch</span>' : "";
+      if (it.type === "toggle") {
+        html += '<div class="row"><div class="toggle"><div><div class="label">' + esc(it.label) + tag + '</div>' +
+          '<div class="from" style="margin-top:3px">' + from + '</div>' + (it.hint ? '<div class="hint">' + esc(it.hint) + "</div>" : "") +
+          '</div><button class="sw' + (truthy(eff.v) ? " on" : "") + (eff.from !== "own" ? " inh" : "") + '" data-key="' + esc(it.key) + '" data-val="' +
+          (truthy(eff.v) ? "false" : "true") + '" aria-label="' + esc(it.label) + '"></button></div></div>';
+      } else if (it.type === "pick" && it.pair) {
+        // vk-285-117: a save or load combo: this item and the next one in one row, "button 1 + button 2". The row is set
+        // here when either is; its reset puts both back.
+        const nx = grp.items[grp.items.indexOf(it) + 1], effn = effective(nx);
+        const same = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+        const own = eff.from === "own" || effn.from === "own";
+        const pfrom = own ? (isGlobal ? "set" : "this game") + ' <button data-reset="' + esc(it.key) + '" data-reset2="' + esc(nx.key) + '">reset</button>'
+                          : (eff.from === "global" || effn.from === "global") ? "all games" : "default";
+        const sel = (item, e) => {
+          let opts = "";
+          for (const o of item.options) opts += '<option value="' + esc(o[0]) + '"' + (same(o[0], e.v) ? " selected" : "") + ">" + esc(o[1]) + "</option>";
+          if (!item.options.some((o) => same(o[0], e.v))) opts += '<option value="' + esc(e.v) + '" selected>' + esc(e.v) + "</option>";
+          return '<select class="pick' + (same(e.v, item.def) ? "" : " moved") + (e.from === "own" ? "" : " inh") + '" data-pickkey="' +
+            esc(item.key) + '" aria-label="' + esc(item.label) + '">' + opts + "</select>";
+        };
+        html += '<div class="row"><div class="head"><div class="label">' + esc(it.pair) + '</div><div class="from">' + pfrom + "</div></div>" +
+          '<div class="pair">' + sel(it, eff) + '<span class="plus">+</span>' + sel(nx, effn) + "</div></div>";
+      } else if (it.type === "pick" && grp.items[grp.items.indexOf(it) - 1] && grp.items[grp.items.indexOf(it) - 1].pair) {
+        // the second list of a combo: drawn with the first
+      } else if (it.type === "pick") {
+        // vk-285-116: a list (the remapping), like a row of buttons: it shows the value in use (dimmer when it is followed,
+        // not set here), a choice sets it here, "reset" follows again. A button that presses something other than its own
+        // is outlined in the cover's colour.
+        const same = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+        let opts = "";
+        for (const o of it.options) opts += '<option value="' + esc(o[0]) + '"' + (same(o[0], eff.v) ? " selected" : "") + ">" + esc(o[1]) + "</option>";
+        if (!it.options.some((o) => same(o[0], eff.v))) opts += '<option value="' + esc(eff.v) + '" selected>' + esc(eff.v) + "</option>";
+        html += '<div class="row prow"><div class="pl"><div class="label">' + esc(it.label) + tag + '</div><div class="from" style="margin-top:2px">' +
+          from + '</div></div><select class="pick' + (same(eff.v, it.def) ? "" : " moved") + (eff.from === "own" ? "" : " inh") +
+          '" data-pickkey="' + esc(it.key) + '" aria-label="' + esc(it.label) + '">' + opts + "</select></div>";
+      } else if (it.type === "text") {
+        html += '<div class="row"><div class="head"><div class="label">' + esc(it.label) + tag + '</div><div class="from">' + from + '</div></div>';
+        if (it.hint) html += '<div class="hint">' + esc(it.hint) + "</div>";
+        html += '<input class="txt" data-textkey="' + esc(it.key) + '" maxlength="200" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="' +
+          esc(it.placeholder || "") + '" value="' + esc(eff.from === "default" ? "" : eff.v) + '"></div>';
+      } else {
+        html += '<div class="row"><div class="head"><div class="label">' + esc(it.label) + tag + '</div><div class="from">' + from + '</div></div>';
+        if (it.hint) html += '<div class="hint">' + esc(it.hint) + "</div>";
+        html += '<div class="seg' + (it.options.length >= 6 ? " many" : "") + '" style="--n:' + (it.cols || it.options.length) + '">' + it.options.map((o) => {
+          const cur = o[0] === eff.v || parseFloat(o[0]) === parseFloat(eff.v);
+          return '<button class="' + (cur ? (eff.from === "own" ? "cur" : "cur inh") : "") + '" data-key="' + esc(it.key) +
+                 '" data-val="' + esc(o[0]) + '">' + esc(o[1]) + "</button>";
+        }).join("") + "</div></div>";
+      }
+    }
+    html += "</div></div>";
+  }
+  if (tab === "controls") {
+    // vk-285-116: every control of this file back to what it follows (two taps).
+    const own = data.values["SNES/SwapAB"] !== undefined || GROUPS.filter((g) => g.tab === "controls").flatMap((g) => g.items).some((it) => data.values[it.key] !== undefined);
+    html += '<div class="btnrow center"><button class="btn ghost" id="ctlreset"' + (own ? "" : " disabled") + ">" +
+      (ctlArmed ? "Tap again" : isGlobal ? "Reset the controls" : "Follow the controls for all games") + "</button></div>";
+  }
+  // (AI-assisted) SNES uses battery RAM saves instead of memory cards.
+  if (false && !isGlobal && tab === "settings") {
+    html += '<div class="sec"><h2>Patches</h2><div class="card">';
+    if (!data.patches.length) html += '<div class="empty">No patch file for ' + esc(data.serial || "this game") + " in patches/.</div>";
+    for (const p of data.patches) {
+      html += '<div class="row"><div class="toggle"><div><div class="label">' + esc(p.name) + "</div>" +
+        (p.description ? '<div class="hint">' + esc(p.description) + "</div>" : "") +
+        '<div class="hint" style="font-size:11px">' + esc(p.file) + '</div></div><button class="sw' + (p.enabled ? " on" : "") +
+        '" data-patch="' + esc(p.name) + '" data-on="' + (p.enabled ? "0" : "1") + '" aria-label="' + esc(p.name) + '"></button></div></div>';
+    }
+    html += "</div></div>";
+  }
+  $("settings").innerHTML = html;
+  $("file").innerHTML = esc(data.file) + (data.exists ? "" : " (made on the first change)") +
+    (playingHere ? " · applied live in the running game" : "");
+  $("settings").querySelectorAll("[data-key]").forEach((b) => b.addEventListener("click", () => change(b.dataset.key, b.dataset.val)));
+  $("settings").querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.reset2) { delete data.values[b.dataset.reset2]; pending.set(b.dataset.reset2, null); } // vk-285-117: a combo's two
+    change(b.dataset.reset, null);
+  }));
+  $("settings").querySelectorAll("[data-patch]").forEach((b) => b.addEventListener("click", () => patch(b.dataset.patch, b.dataset.on === "1")));
+  $("settings").querySelectorAll("[data-textkey]").forEach((el) => el.addEventListener("change", () => {
+    const v = el.value.trim();
+    if (v.includes("#")) { toast("A # can't be in a path here"); render(); return; }
+    change(el.dataset.textkey, v === "" ? null : v);
+  }));
+  $("settings").querySelectorAll("[data-pickkey]").forEach((el) => el.addEventListener("change", () => change(el.dataset.pickkey, el.value)));
+  $("settings").querySelectorAll("[data-mcd]").forEach((el) => el.addEventListener("change", () => mcdChoose(SLOTS[+el.dataset.mcd - 1], el.value)));
+  $("settings").querySelectorAll("[data-mcdreset]").forEach((b) => b.addEventListener("click", () => mcdChoose(SLOTS[+b.dataset.mcdreset - 1], "")));
+  $("settings").querySelectorAll("[data-mcdsize]").forEach((b) => b.addEventListener("click", () => { mcdSize = +b.dataset.mcdsize; render(); }));
+  const mn = $("mcdname");
+  if (mn) mn.addEventListener("input", () => { mcdName = mn.value; });
+  const mc = $("mcdcreate");
+  if (mc) mc.addEventListener("click", mcdCreate);
+  const cr = $("ctlreset");
+  if (cr) cr.addEventListener("click", () => {
+    if (!ctlArmed) {
+      ctlArmed = setTimeout(() => { ctlArmed = 0; if (data) render(); }, 3500);
+      render();
+      toast(isGlobal ? "Tap again to reset the controls" : "Tap again: this game's controls follow all games");
+      return;
+    }
+    clearTimeout(ctlArmed); ctlArmed = 0;
+    if(data.values["SNES/SwapAB"] !== undefined){delete data.values["SNES/SwapAB"];pending.set("SNES/SwapAB",null);}
+    for (const it of GROUPS.filter((g) => g.tab === "controls").flatMap((g) => g.items))
+      if (data.values[it.key] !== undefined) { delete data.values[it.key]; pending.set(it.key, null); }
+    render();
+    queueSave();
+  });
+  const rb = $("recbtn");
+  if (rb) rb.addEventListener("click", () => {
+    if (!recArmed) {
+      recArmed = setTimeout(() => { recArmed = 0; if (data) render(); }, 3500);
+      render();
+      toast(isGlobal ? "Tap again to replace the settings for all games" : "Tap again to replace this game's settings");
+      return;
+    }
+    clearTimeout(recArmed); recArmed = 0;
+    useRecommended();
+  });
+}
+
+// ---- vk-285-113: memory cards
+function cardSize(bytes) {
+  if (bytes === 131072) return "PS1";
+  for (const mb of [8, 16, 32, 64]) if (bytes === mb * 1081344 || bytes === mb * 1048576) return mb + " MB";
+  return (bytes / 1048576).toFixed(1) + " MB";
+}
+async function loadCards() {
+  try {
+    const c = await api("/api/memcards");
+    const changed = JSON.stringify(c) !== JSON.stringify(cards);
+    cards = c;
+    if (changed && data) render();
+  } catch (e) {}
+}
+function memcardsHtml(isGlobal) {
+  if (!cards) return "";
+  let html = '<div class="sec"><h2>Memory cards</h2><div class="card">';
+  for (const s of SLOTS) {
+    const fe = effective({ key: s.file, def: s.def }), oe = effective({ key: s.on, def: "true" });
+    const own = fe.from === "own" || oe.from === "own";
+    const none = !truthy(oe.v);
+    const gFile = isGlobal ? s.def : (data.global[s.file] !== undefined ? data.global[s.file] : s.def);
+    const gOn = isGlobal ? "true" : (data.global[s.on] !== undefined ? data.global[s.on] : "true");
+    const inherited = (isGlobal ? "Default" : "Same as all games") + " (" + (truthy(gOn) ? gFile : "no card") + ")";
+    const cur = own ? (none ? "@none" : fe.v) : "";
+    const listed = cards.cards.some((c) => c.name === cur);
+    let from = own ? (isGlobal ? "set" : "this game") + ' <button data-mcdreset="' + s.n + '">reset</button>'
+                   : (fe.from === "global" || oe.from === "global") ? "all games" : "default";
+    let opts = '<option value=""' + (cur === "" ? " selected" : "") + ">" + esc(inherited) + "</option>" +
+      '<option value="@none"' + (cur === "@none" ? " selected" : "") + ">No card</option>";
+    for (const c of cards.cards)
+      opts += '<option value="' + esc(c.name) + '"' + (c.name === cur ? " selected" : "") + ">" + esc(c.name) + " \u00b7 " + cardSize(c.bytes) + "</option>";
+    if (cur && cur !== "@none" && !listed)
+      opts += '<option value="' + esc(cur) + '" selected>' + esc(cur) + " \u00b7 not in memcards/</option>";
+    html += '<div class="row"><div class="head"><div class="label">Slot ' + s.n + '</div><div class="from">' + from + "</div></div>" +
+      '<select class="pick" data-mcd="' + s.n + '" aria-label="Memory card, slot ' + s.n + '">' + opts + "</select></div>";
+  }
+  html += '<div class="row"><div class="label">New card</div>' +
+    '<div class="hint">A blank card. The game, or the PS2 browser, formats it the first time. Most games are happiest with 8 MB; bigger cards run out much later. ' +
+    'To move saves over, put the old card in slot 2 and copy them in the PS2 browser.</div>' +
+    '<input class="txt" id="mcdname" maxlength="40" autocomplete="off" placeholder="Name, for example Big card" value="' + esc(mcdName) + '">' +
+    '<div class="seg" style="--n:4">' + cards.sizes.map((mb) =>
+      '<button class="' + (mb === mcdSize ? "cur" : "") + '" data-mcdsize="' + mb + '">' + mb + " MB</button>").join("") + "</div>" +
+    '<div class="btnrow"><button class="btn primary" id="mcdcreate"' + (mcdBusy ? " disabled" : "") + ">" + (mcdBusy ? "Making the card\u2026" : "Create card") + "</button></div></div>";
+  return html + "</div></div>";
+}
+// "" back to the default (or all games'), "@none" no card, else a file name: the slot's two settings.
+function mcdChoose(s, v) {
+  if (v === "") { change(s.file, null); change(s.on, null); return; }
+  if (v === "@none") { change(s.file, null); change(s.on, "false"); return; }
+  change(s.file, v);
+  if (!truthy(effective({ key: s.on, def: "true" }).v)) change(s.on, "true");
+}
+async function mcdCreate() {
+  const name = mcdName.trim();
+  if (!name) { toast("Give the card a name first"); const n = $("mcdname"); if (n) n.focus(); return; }
+  mcdBusy = true; render();
+  try {
+    const r = await api("/api/memcards", { method: "POST", body: "create " + mcdSize + " " + name, headers: { "Content-Type": "text/plain" } });
+    cards = r; mcdName = "";
+    toast("Made " + r.created + " (" + mcdSize + " MB) \u00b7 pick it in a slot");
+  } catch (e) { toast("Card not made: " + e.message); }
+  mcdBusy = false;
+  if (data) render();
+}
+
+// The whole file becomes the recommended one; the console keeps the old one beside it.
+async function useRecommended() {
+  const id = current, mtvu = data.recommended.values["EmuCore/Speedhacks/vuThread"] !== undefined;
+  pending.clear(); clearTimeout(saveTimer);
+  try {
+    const d = await api("/api/settings?id=" + encodeURIComponent(id), { method: "POST", body: "recommended\n", headers: { "Content-Type": "text/plain" } });
+    if (current === id) { data = d; render(); }
+    const live = state.playing && (id === "@global" || state.playing.id === id);
+    toast(live ? "Recommended settings on \u00b7 applying" + (mtvu ? ", MTVU at next launch" : " in the game") : "Recommended settings on");
+    refreshGames();
+  } catch (e) { toast("Not saved: " + e.message); }
+}
+
+// Changes show at once and go to the console after a short pause, so a few taps make one write.
+function change(key, value) {
+  if (value === null) delete data.values[key]; else data.values[key] = value;
+  pending.set(key, value);
+  render();
+  queueSave();
+}
+function patch(name, on) {
+  const p = data.patches.find((x) => x.name === name);
+  if (p) p.enabled = on;
+  pending.set("patch:" + name, on);
+  render();
+  queueSave();
+}
+function queueSave() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 350); }
+async function save() {
+  if (!pending.size) return;
+  const id = current, lines = [];
+  const later = []; // what applies at the next launch (vk-285-110: not only MTVU)
+  for (const [k, v] of pending) {
+    if (k.startsWith("patch:")) lines.push((v ? "patch+ " : "patch- ") + k.slice(6));
+    else if (v === null) lines.push("unset " + k);
+    else lines.push("set " + k + "=" + v);
+    const it = GROUPS.flatMap((g) => g.items).find((x) => x.key === k);
+    if (it && it.restart && !later.includes(it.later || it.label)) later.push(it.later || it.label);
+  }
+  pending.clear();
+  try {
+    const d = await api("/api/settings?id=" + encodeURIComponent(id), { method: "POST", body: lines.join("\n") + "\n", headers: { "Content-Type": "text/plain" } });
+    if (current === id) { data = d; render(); }
+    const live = state.playing && (id === "@global" || state.playing.id === id);
+    toast(live ? (later.length ? "Saved \u00b7 the rest applies now, " + later.join(" and ") + " at next launch" : "Saved \u00b7 applying in the game") : "Saved");
+    refreshGames();
+  } catch (e) { toast("Not saved: " + e.message); }
+}
+
+async function refreshGames() {
+  try {
+    const list = await api("/api/games");
+    list.forEach((g) => { const old = games.find((x) => x.id === g.id); if (old) Object.assign(old, g); });
+    if (current && current !== "@global") select(current);
+  } catch (e) {}
+}
+
+async function refreshState() {
+  try {
+    const s = await api("/api/state");
+    const changed = JSON.stringify(s.playing) !== JSON.stringify(state.playing);
+    state = s;
+    $("build").textContent = s.build;
+    if (s.playing) { $("now").classList.add("show"); $("nowtitle").textContent = s.playing.title; $("nowcover").src = cover(s.playing.id); }
+    else $("now").classList.remove("show");
+    if (changed && games.length) {
+      games = await api("/api/games");
+      buildFlow();
+      const i = s.playing ? games.findIndex((g) => g.id === s.playing.id) : -1;
+      if (i >= 0) { scrollToGame(i, false); select(games[i].id); }
+      else if (data) render();
+    }
+  } catch (e) {}
+}
+
+$("allgames").addEventListener("click", () => select(current === "@global" && games.length ? games[0].id : "@global"));
+// vk-285-116: the tabs.
+function showTab() { document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab)); }
+document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => {
+  if (tab === b.dataset.tab) return;
+  tab = b.dataset.tab;
+  try { localStorage.setItem("ps5sx2.tab", tab); } catch (e) {}
+  clearTimeout(ctlArmed); ctlArmed = 0;
+  showTab();
+  if (data) render();
+}));
+showTab();
+
+// ---- Test build 1 (vk-285-55): a note into the logs, and the logs as one file for the Discord.
+async function sendNote() {
+  const t = $("note").value.trim();
+  if (!t) return true;
+  try {
+    await api("/api/note", { method: "POST", body: t, headers: { "Content-Type": "text/plain" } });
+    $("note").value = "";
+    toast("Note added to the logs");
+    return true;
+  } catch (e) {
+    toast("The note didn't reach the console");
+    return false;
+  }
+}
+$("savenote").addEventListener("click", sendNote);
+$("dllogs").addEventListener("click", async (ev) => {
+  ev.preventDefault();
+  await sendNote();
+  toast("Downloading the logs…");
+  location.href = "/api/report";
+});
+function showTesting(s) {
+  if (!(s.test > 0)) return;
+  $("testlabel").textContent = s.build;
+  $("testing").classList.remove("hide");
+}
+// The clipboard API needs HTTPS, which a console on the LAN doesn't have; the old copy command works.
+$("discord").addEventListener("click", async () => {
+  let ok = false;
+  try { await navigator.clipboard.writeText("sword.pdf"); ok = true; } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = "sword.pdf"; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, 99);
+    try { ok = document.execCommand("copy"); } catch (e2) {}
+    ta.remove();
+  }
+  toast(ok ? "Copied sword.pdf" : "Discord: sword.pdf");
+});
+
+(async function start() {
+  try {
+    const s = await api("/api/state");
+    state = s;
+    $("build").textContent = s.build;
+    showTesting(s);
+    games = await api("/api/games");
+  } catch (e) { toast("The console didn't answer"); return; }
+  $("main").classList.remove("hide");
+  buildFlow();
+  if (state.playing) { $("now").classList.add("show"); $("nowtitle").textContent = state.playing.title; $("nowcover").src = cover(state.playing.id); }
+  let i = state.playing ? games.findIndex((g) => g.id === state.playing.id) : 0;
+  if (i < 0) i = 0;
+  requestAnimationFrame(() => { scrollToGame(i, false); if (games[i]) select(games[i].id); else select("@global"); });
+  setInterval(refreshState, 5000);
+})();
+</script>
+</body>
+</html>

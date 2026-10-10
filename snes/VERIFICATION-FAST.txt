@@ -1,0 +1,13 @@
+PS5NES v4 (AI-assisted)
+- 64 KiB names / 256 KiB NFS reply batching and TCP_NODELAY; detailed phase timings logged.
+- Attribute-less ROM/ZIP names avoid per-entry metadata queries in the NES scan.
+- Per-entry logs reduced; boot logger uses line buffering.
+- Library cache validated against configured sources, bounds and CRC; atomically replaced.
+- 1000-game host test: zero NFS requests on cached startup, manual rescan, changed share,
+  offline fallback and corrupt-cache rejection passed. Original settings rescan action passed.
+- NFS backend failure/read/metadata tests and NES ROM/ZIP/audio/input/save/PAL tests passed.
+- Read-only PC benchmark of user's exact /NES export: 915 entries, zero unknown types.
+  Default: 0.012s listing, 0.020s total. Optimized: 0.004s listing, 0.011s total.
+  PC measurements are not PS5 performance measurements. No ROM contents read.
+- Native link and signed eboot integrity valid; ZIP CRC/SHA256 verified.
+- Not tested on PS5 hardware yet. First successful scan creates the persistent index.

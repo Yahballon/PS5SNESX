@@ -1,0 +1,18 @@
+PS5NES v2 Original UI verification (AI-assisted)
+
+Active build compiles PS5SX2 frontend sources directly with the FCEUmm NES backend.
+Renderer implementation, font renderer, sound mixer and Vulkan loader are identical
+to the original PS5SX2 source. App, platform and option sheets have focused NES hooks.
+
+Host integration with an original generated NROM: video/audio/controller, ZIP loading,
+SRAM persistence, save-state roundtrip, repeated reloads and PAL region timing passed.
+Actual host Vulkan: original shelf, NES options sheet, raw RGB NES shader and return
+to the same shelf rendered successfully. Screenshots are in build-shelf/preview.
+QR settings JavaScript syntax validated with V8.
+Native link: 397 imports, zero non-stub undefined symbols. Signed eboot integrity valid.
+ZIP CRC, file SHA256, source SHA256 and PPSA99204 app/helper identity verified.
+No commercial ROMs, BIOS, games or save files included.
+
+Not run on PS5 hardware. GPU/Audio/Menu transitions still require console testing.
+NES cover filename lookup uses libretro-thumbnails; PS5 downloads need console testing.
+NFS uses the existing PS5SX2 transport, with NES ROM loading into memory.

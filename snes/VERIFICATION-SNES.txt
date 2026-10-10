@@ -1,0 +1,10 @@
+PS5SNES v2 (AI-assisted)
+Real bsnes-mercury balanced core compiled for PS5; coroutine switch remains in executable text.
+Generated original LoROM/SPC host test passed: expected red framebuffer, nonzero audio,
+all 12 buttons, ZIP, 512-byte copier header, battery SRAM persistence, save-state roundtrip,
+PAL timing and continuous native-clock -> 48-kHz resampling.
+Original shelf/controller pane and raw RGB Vulkan frame rendered and inspected.
+Native process memory parameters verified, signed eboot integrity valid, ZIP CRC and file SHA256 checked.
+App ID and filesystem helper both PPSA99205; no old PS5NES app included in the ZIP.
+New supplied SNES logo validated as 512x512 icon. No commercial ROMs or firmware included.
+Not run on PS5 hardware; performance/compatibility need user testing.

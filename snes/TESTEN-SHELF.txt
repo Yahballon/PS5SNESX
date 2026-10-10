@@ -1,0 +1,61 @@
+PS5NES v6 modded by YAHBALLON (AI-assisted)
+
+Separater NES-Emulator auf Basis von FCEUmm. Kein PS2-BIOS erforderlich.
+Dieser Testbuild wurde kompiliert und am Host geprueft, noch nicht auf einer PS5.
+
+Den gesamten PPSA99204-Ordner nach /data/homebrew/PPSA99204/ kopieren.
+PS5NES hat eine eigene Titel-ID und eigene Daten unter /data/PS5NES/.
+Start ueber denselben Homebrew-Launcher wie PS5SX2.
+Der mitgelieferte Dateisystemhelfer ist auf PPSA99204 beschraenkt.
+Falls Dateisystemzugriff fehlt, benoetigt er den lokalen ELF-Loader auf Port 9021.
+PS5SX2 und dessen Daten nicht ersetzen.
+
+ROMs: /data/PS5NES/games/ oder /mnt/usb0/homebrew/PS5NES/games/
+Auch USB1 bis USB7, PS5NES/roms, PS5NES/games und NES/ werden durchsucht.
+Unterordner bis Tiefe 5 werden durchsucht. Unterstuetzt: .nes, .unf, .unif.
+ZIP: genau eine NES-ROM pro ZIP, Stored/Deflate; maximal 32 MiB ROM, 64 MiB Archiv.
+ZIPs werden im RAM dekomprimiert; es wird keine ROM auf die PS5 entpackt.
+Kein FDS, kein Zapper, erste Version mit einem aktiven Spieler.
+
+Optional NFSv3: /data/PS5NES/nfs.txt, eine nfs://server/export/folder-URL pro Zeile.
+NFS-ROMs werden vollstaendig in RAM geladen, kein Kernel-Mount erforderlich.
+NFS-Konfiguration ist auch mit der originalen Controller-Tastatur einstellbar.
+
+Originales PS5SX2-Cover-Regal: D-Pad links/rechts, Cross startet, Square oeffnet Einstellungen.
+Square -> R1 fuer alle Spiele -> Settings -> Network -> NFS URL.
+Nach einer neuen NFS-URL die App neu starten. Einstellungen werden vor dem Spielstart gelesen.
+Spiel: NES A=Cross, NES B=Circle, Options=Start, Touchpad/Create=Select.
+Linker Stick funktioniert ebenfalls als D-Pad.
+L1+R1+Touchpad-Klick: Spiel schliessen, speichern und zur Liste zurueck.
+Beide Sticks klicken (L3+R3) und hoch: Zustand speichern; runter: Zustand laden.
+Battery-Saves werden alle 5 Sekunden und beim Zurueckkehren gespeichert.
+Saves liegen in /data/PS5NES/saves, Log in /data/PS5NES/logs/boot.log.
+Wenn /data nicht erreichbar ist, wird /download0/PS5NES als Ausweichordner verwendet.
+
+Es sind keine Spiele, BIOS-Dateien oder proprietaere Daten enthalten.
+
+Originale PS5SX2-UI: Cover-Regal, Animationen, Fonts, Glow, Reflexionen und Sounds.
+NES-Grafik wird vom selben Vulkan-Renderer ausgegeben; Touchpad-Kombo bringt dich ins selbe Regal zurueck.
+Eigene Cover: /data/PS5NES/covers/<ROM-Dateiname ohne Erweiterung>.png oder .jpg.
+Automatische Covers: libretro-thumbnails NES Named_Boxarts, passend zum ROM-Dateinamen (No-Intro).
+NES-Einstellungen: Region, Palette, 4:3/Integer-Bild, Ton und A/B-Tausch.
+
+Die originale QR-Einstellungsseite ist auf Port 8844 aktiv und benutzt dieselben NES-INI-Dateien.
+Aenderungen wirken beim naechsten Spielstart; Logs lassen sich wie bisher herunterladen.
+
+Version 3: sofortige Ladeanzeige vor NFS-Scan; animierter Fortschrittsbalken, Spielezahl und gelesene Eintraege.
+NFS liefert keine Gesamtzahl vorab; der Balken zeigt Aktivitaet, danach Vollstaendigkeit.
+
+Version 4: groessere NFS-Listenpakete, keine einzelnen Metadatenabfragen fuer bekannte ROM-/ZIP-Namen ohne Attribute, weniger Logausgaben.
+Nach erfolgreichem Scan startet die Bibliothek aus einem lokalen Namenscache. Keine Spiele werden dafuer heruntergeladen.
+Neue/entfernte Spiele: Square -> R1 (All games) -> Settings -> Network -> Rescan game library, danach App neu starten.
+Eine geaenderte NFS-URL verwendet automatisch einen anderen Cache.
+
+Version 5: PS5SX2-Prozessspeichereinstellungen im Paket; Cover werden nur nahe der Auswahl geladen.
+Die komplette Bibliothek bleibt sichtbar. Weitere Cover laden beim Browsen und bleiben auf Platte im Cache.
+
+Version 6: Square -> Controls (R2) zeigt und bearbeitet alle NES-Tasten und Save/Load/Menu-Kombinationen.
+R1 waehlt All games fuer globale Bindings; This game speichert nur fuer das ausgewaehlte Spiel.
+Links/rechts bzw. Cross wechselt die Belegung; gespeichert wird sofort. Wirkung beim naechsten Spielstart.
+Jede Kombination hat bis zu 3 Tasten. None ueberspringt eine Taste; alle None deaktiviert die Kombination.
+L1+R1+Touchpad 2 Sekunden gehalten bleibt als Rueckkehr ins Menue verfuegbar.

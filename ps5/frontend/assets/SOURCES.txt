@@ -1,0 +1,4 @@
+Font Awesome Free 7.3.1 (FortAwesome/Font-Awesome @ 14c65a3, 2026-07-15)
+  fa-brands-400.otf = otfs/"Font Awesome 7 Brands-Regular-400.otf" (renamed file, unmodified font): SIL OFL 1.1
+  web/discord.svg, web/x-twitter.svg = svgs/brands/*.svg: CC BY 4.0
+QR Code generator (C), Project Nayuki, MIT (nayuki/QR-Code-generator @ 3c6d0b3, 2026-08-31): third_party/qrcodegen/

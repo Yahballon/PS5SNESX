@@ -1,0 +1,11 @@
+PS5NES v5 memory crash fix (AI-assisted)
+Packaging now builds the project's original PS5SX2 native writer, which supplies
+flexible libc heap and the working PS5SX2 flexible/internal memory parameters.
+Actual generated ELF pointers, relocation targets and memory values are validated
+before signing on every build. Driver helper packager is no longer used.
+Artwork production stays within radius 12 of selection; queue <=8 images.
+GPU artwork outside selection/scroll windows is retired with the renderer fences.
+Actual 907-game font/cover test: first selection, distant jumps, revisits and
+full-queue worker shutdown passed. Shader cache gets a writable PS5NES path.
+Signed eboot integrity valid; ZIP CRC and runtime/source SHA256 verified.
+Console crash resolution still requires testing on PS5 hardware.

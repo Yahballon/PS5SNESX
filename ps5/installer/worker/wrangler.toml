@@ -1,0 +1,32 @@
+# PS5SX2 log relay (see README.md). Deploy: npx wrangler deploy; secret: npx wrangler secret put DISCORD_WEBHOOK_URL
+name = "ps5sx2-logs"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+# At most 20 reports a minute per console ID, and 30 per network address (the ID is chosen by the client, the
+# address isn't). The installer keeps anything refused and tries again later.
+[[ratelimits]]
+name = "UPLOAD_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60
+
+[[ratelimits]]
+name = "IP_LIMITER"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
+# Optional: keep a copy of every report in R2 as well (create the bucket first).
+# [[r2_buckets]]
+# binding = "LOGS"
+# bucket_name = "ps5sx2-logs"
+
+# A 7-day record of every report attempt, no addresses: npx wrangler kv key list --binding RECENT --remote
+[[kv_namespaces]]
+binding = "RECENT"
+id = "27d2e7ddc7d8488fa6953adcb80ea157"
