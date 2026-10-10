@@ -1,9 +1,9 @@
 <p align="center"><img src="snes/sce_sys/icon0.png" width="180" alt="PS5SNES logo"></p>
 
 # PS5SNES
-
-**Super Nintendo games on PS5 — v6 by YAHBALLON**
-
+<p align="center">
+  <img src="screenshots/background.png" alt="PS5NES game shelf">
+</p>
 PS5SNES is a standalone PS5 homebrew emulator using the **bsnes-mercury balanced** core and the original PS5SX2 cover-flow interface. It is a separate project with its own application ID (`PPSA99205`) and data directory (`/data/PS5SNES`). Development and documentation were **AI-assisted**.
 
 ## Latest update
