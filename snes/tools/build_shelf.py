@@ -116,7 +116,7 @@ if (nes/'licenses').exists():
 revision_file=core/'UPSTREAM_REVISION.txt'
 if revision_file.exists():commit=revision_file.read_text().strip()
 else:commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=core,text=True).strip()
-manifest={'ai_assisted':True,'name':'SNESXY v1.0.7 by YAHBALLON','title':'PPSA99205','core':'bsnes-mercury balanced',
+manifest={'ai_assisted':True,'name':'SNESXY v1.0.8 by YAHBALLON','title':'PPSA99205','core':'bsnes-mercury balanced',
           'frontend':'SNESXY 3D CoverFlow with 5 native themes',
           'frontend_source_sha256':{str(p.relative_to(project)):hashlib.sha256(p.read_bytes()).hexdigest() for p in cpp_sources if '/ps5/frontend/' in str(p)},
           'core_commit':commit,'core_source':'https://github.com/libretro/bsnes-mercury','console_tested':False,
@@ -124,7 +124,7 @@ manifest={'ai_assisted':True,'name':'SNESXY v1.0.7 by YAHBALLON','title':'PPSA99
                    if p.is_file() and p.name != 'build-manifest.json'}}
 (app/'build-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 shutil.copy2(nes/'INSTALL.md',out/'package/INSTALL.md')
-bundle=out/'SNESXY-v1.0.7-by-YAHBALLON.zip'
+bundle=out/'SNESXY-v1.0.8-by-YAHBALLON.zip'
 with zipfile.ZipFile(bundle,'w',zipfile.ZIP_DEFLATED) as archive:
     for path in app.rglob('*'):
         if path.is_file():archive.write(path,Path('PPSA99205')/path.relative_to(app))

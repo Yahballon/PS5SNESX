@@ -1,4 +1,4 @@
-// Native NES library adapter for the unmodified Porpoise Gfx renderer.
+// Native SNES library adapter for the unmodified Porpoise Gfx renderer.
 // Project Porpoise: copyright (C) 2026 Ruben, GPL-3.0-or-later.
 // https://github.com/elripalda/Porpoise-Dolphin-Emulator-for-PS5
 // This adapter contains no Dolphin emulation code.
@@ -35,7 +35,7 @@ private:
     std::string m_clock;
     CoverProgress m_cover_progress;
     std::string m_theme = "royal-indigo";
-    porpoise::ui::Texture* m_fallback = nullptr; // reusable bundled NO COVER GPU texture
+    porpoise::ui::Texture* m_fallback = nullptr; // reusable offline placeholder, contained without stretching
     bool m_ready = false;
 };
 } // namespace fe

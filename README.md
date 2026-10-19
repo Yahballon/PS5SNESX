@@ -4,7 +4,7 @@
 
 **16-Bit Memories. Next-Gen Homebrew.**
 
-**SNESXY v1.0.7 · by YAHBALLON · PPSA99205**
+**SNESXY v1.0.8 · by YAHBALLON · PPSA99205**
 
 [![Native PS5 Build](https://github.com/Yahballon/PS5SNESX/actions/workflows/build-snesxy.yml/badge.svg)](https://github.com/Yahballon/PS5SNESX/actions/workflows/build-snesxy.yml)
 [![Releases](https://img.shields.io/github/v/release/Yahballon/PS5SNESX?style=flat-square)](https://github.com/Yahballon/PS5SNESX/releases)
@@ -13,9 +13,11 @@
 
 SNESXY is a native Super Nintendo emulator for jailbroken PS5 consoles, based on the **bsnes-mercury balanced** core. Its modern 3D CoverFlow frontend takes inspiration from our NESYX work, while using its own SNES-themed palettes and an original Hypercube startup animation. The repository stays named PS5SNESX to preserve existing links.
 
-## What's new in v1.0.7
+## What's new in v1.0.8
 
-- **3D glass CoverFlow:** animated full-size box art, reflections, smooth movement and cover caching.
+- **Native SNES box proportions:** Landscape SNES covers render on **wide glass cases**; rarer portrait artwork stays in taller cases. Every cover preserves its image ratio and full image without cropping, and reflections match the case size. Cached artwork is reused automatically—no cover-cache reset.
+
+- **Adaptive 3D glass CoverFlow:** landscape and portrait box art automatically use matching case shapes, uncropped textures, reflections, smooth movement and cover caching.
 - **Five SNESXY themes:** Royal Indigo (violet/pink), Sunset Arcade (orange/coral), Emerald Circuit (mint green), Glacier Glass (ice blue), and Midnight Gold (black/gold). Change them in **Settings → Appearance → Theme**; saved for the entire library.
 - **16-Bit Hypercube:** animated rotating wireframe cubes with colorful satellites, scanlines, and accurate NFS/ROM scanning counters; wholly separate from NESYX's Pixel Reactor.
 - **Additional SNES cover provider:** [Libretro Named Boxarts](https://thumbnails.libretro.com/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System/Named_Boxarts/) alongside the original SNES collection and Libretro GitHub mirror.
@@ -48,7 +50,7 @@ Place your own legally acquired `.sfc`, `.smc`, `.swc` or `.fig` games in `/data
 
 ## Builds and source
 
-[**Native Build & Release workflow**](.github/workflows/build-snesxy.yml) runs the SNESXY regression tests, provisions the pinned open-source PS5 toolchain, builds the native executable and creates `PPSA99205.zip`. Main-branch builds publish a release tagged `snesxy-v1.0.7`. The version is recorded in `app.json` and `snes/src/snesxy_build_version.h`.
+[**Native Build & Release workflow**](.github/workflows/build-snesxy.yml) runs the SNESXY regression tests, provisions the pinned open-source PS5 toolchain, builds the native executable and creates `PPSA99205.zip`. Main-branch builds publish a release tagged `snesxy-v1.0.8`. The version is recorded in `app.json` and `snes/src/snesxy_build_version.h`.
 
 ```text
 snes/src/                  SNES core integration, runtime and Hypercube loader

@@ -45,6 +45,8 @@ jobs:
       - name: Validate SNESXY themes, Hypercube and cover providers
         run: |
           python3 tests/test_snesxy_ui.py
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Ips5/frontend tests/test_snesxy_cover_geometry.cpp -o /tmp/snesxy-cover-geometry
+          /tmp/snesxy-cover-geometry
           python3 -m py_compile snes/tools/build_shelf.py
           git diff --exit-code
       - name: Install toolchain packages

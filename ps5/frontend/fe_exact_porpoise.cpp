@@ -1,8 +1,9 @@
 // Port adapter for the ORIGINAL Project Porpoise Gfx renderer, shaders,
 // perspective, cover-flow arrangement and liquid-glass card primitives.
 // Copyright (C) 2026 Ruben (Project Porpoise), GPL-3.0-or-later.
-// Adaptation for NES game selection: YAHBALLON, GPL-3.0-or-later.
+// Adaptation for SNES game selection: YAHBALLON, GPL-3.0-or-later.
 #include "fe_exact_porpoise.h"
+#include "fe_snesxy_cover_aspect.h"
 #include "snesxy_build_version.h"
 #include "../porpoise_original/src/ui_app_common.hpp"
 #include <algorithm>
@@ -69,8 +70,8 @@ void ExactPorpoiseShelf::Select(int index, float scroll, double elapsed, const s
     m_clock = clock;
 }
 
-// Exactly the Project Porpoise front-cover rendering method, adapted only
-// to get artwork from the NES library instead of Dolphin's Library::Game.
+// Porpoise 3D case drawing adapted to the natural aspect ratio of each
+// SNES cover image (North American landscape and occasional portrait art).
 void ExactPorpoiseShelf::DrawTile(int i, float cx, float cy, float w, float h,
                                   float yaw, float alpha, bool focused, bool reflection)
 {
@@ -78,8 +79,14 @@ void ExactPorpoiseShelf::DrawTile(int i, float cx, float cy, float w, float h,
     const float m = 13.0f; /* glass frame margin */
     const float glow = focused ? 20.0f : 0.0f;
     const float inner_r = kR * 0.6f;
-    PorpoiseTexture* cover = i >= 0 && static_cast<size_t>(i) < m_art.size() ? m_art[static_cast<size_t>(i)] : nullptr;
-    if (!cover) cover = m_fallback; // real covers take priority, including after refresh
+    PorpoiseTexture* real = i >= 0 && static_cast<size_t>(i) < m_art.size() ? m_art[static_cast<size_t>(i)] : nullptr;
+    PorpoiseTexture* cover = real ? real : m_fallback; // prefer downloaded or local boxart
+    const float texRatio = SNESXYImageRatio(cover ? cover->width : 0,
+                                           cover ? cover->height : 0);
+    // Missing artwork uses a wide SNES case, but our square app emblem is
+    // letterboxed inside it rather than stretched out of proportion.
+    const SNESXYCoverSize inset = SNESXYFitInside(texRatio, w, h);
+
     if (reflection)
     {
         const float base = cy + h * 0.5f + m;
@@ -88,16 +95,28 @@ void ExactPorpoiseShelf::DrawTile(int i, float cx, float cy, float w, float h,
                              project(cx, base, w * 0.5f, h * 0.85f, yaw),
                              project(cx, base, -w * 0.5f, h * 0.85f, yaw)};
         if (cover) {
-            float uv[4] = {0, 0, 1, 1};
-            const float ta = float(cover->width) / float(cover->height), aa = w / h;
-            if (ta > aa) {
-                const float k = aa / ta;
-                uv[0] = 0.5f - k * 0.5f;
-                uv[2] = 0.5f + k * 0.5f;
+            // Preserve the entire box illustration in its reflection too.
+            // A square fallback graphic sits centered inside its wide frame.
+            const float uv[4] = {0, 0, 1, 1};
+            if (!real) {
+                g.quad3d(nullptr, r, w, h * 0.85f,
+                         with_alpha(rgba(0x1E174B),0.22f*alpha),inner_r,true,true);
+                const float imageW=inset.width;
+                const float imageH=inset.height*0.85f;
+                const Corner small[4]={
+                    project(cx,base,-imageW*0.5f,0,yaw),
+                    project(cx,base, imageW*0.5f,0,yaw),
+                    project(cx,base, imageW*0.5f,imageH,yaw),
+                    project(cx,base,-imageW*0.5f,imageH,yaw)
+                };
+                g.quad3d(cover,small,imageW,imageH,
+                         with_alpha(rgba(0xB8C8FF),0.30f*alpha),
+                         inner_r,true,true,uv);
+            } else {
+                g.quad3d(cover, r, w, h*0.85f,
+                         with_alpha(rgba(0xB8C8FF),0.30f*alpha),
+                         inner_r,true,true,uv);
             }
-            uv[1] = 0.15f;
-            g.quad3d(cover, r, w, h * 0.85f, with_alpha(rgba(0xB8C8FF), 0.30f * alpha),
-                     inner_r, true, true, uv);
         } else {
             g.quad3d(nullptr, r, w, h * 0.85f,
                      with_alpha(rgba(0x2A4FD0), 0.25f * alpha), inner_r, true, true);
@@ -120,19 +139,24 @@ void ExactPorpoiseShelf::DrawTile(int i, float cx, float cy, float w, float h,
                          project(cx, cy, -w * 0.5f, h * 0.5f, yaw)};
     if (cover)
     {
-        float uv[4] = {0, 0, 1, 1};
-        const float ta = float(cover->width) / float(cover->height), aa = w / h;
-        if (ta > aa) {
-            const float k = aa / ta;
-            uv[0] = 0.5f - k * 0.5f;
-            uv[2] = 0.5f + k * 0.5f;
+        // No source-UV cropping: every pixel of the original horizontal OR
+        // vertical SNES cover must be visible on its native-aspect case.
+        const float uv[4] = {0,0,1,1};
+        if (real) {
+            g.quad3d(cover,c,w,h,with_alpha(kWhite,alpha),inner_r,
+                     false,false,uv);
         } else {
-            const float k = ta / aa;
-            uv[1] = 0.5f - k * 0.5f;
-            uv[3] = 0.5f + k * 0.5f;
+            g.quad3d(nullptr,c,w,h,with_alpha(rgba(0x111B41),alpha),
+                     inner_r,false,false);
+            const Corner contained[4]={
+                project(cx,cy,-inset.width*0.5f,-inset.height*0.5f,yaw),
+                project(cx,cy, inset.width*0.5f,-inset.height*0.5f,yaw),
+                project(cx,cy, inset.width*0.5f, inset.height*0.5f,yaw),
+                project(cx,cy,-inset.width*0.5f, inset.height*0.5f,yaw)
+            };
+            g.quad3d(cover,contained,inset.width,inset.height,
+                     with_alpha(kWhite,alpha),inner_r,false,false,uv);
         }
-        g.quad3d(cover, c, w, h, with_alpha(kWhite, alpha), inner_r,
-                 false, false, uv);
     } else {
         g.quad3d(nullptr, c, w, h, with_alpha(rgba(0x16328F), alpha),
                  inner_r, false, false);
@@ -273,21 +297,32 @@ void ExactPorpoiseShelf::Prepare(unsigned slot, float w, float h)
             float x,scale,yaw;
             if(a<=1.0f)
             {
-                x=kCx+s*a*372.0f;
-                scale=1.0f-0.14f*a;
-                yaw=s*a*0.22f;
+                // Wider SNES boxes need more breathing room than NES cases.
+                x=kCx+s*a*545.0f;
+                scale=1.0f-0.12f*a;
+                yaw=s*a*0.18f;
             }
             else
             {
-                x=kCx+s*(372.0f+(a-1.0f)*284.0f);
-                scale=std::max(0.5f,0.86f-0.10f*(a-1.0f));
-                yaw=s*0.22f;
+                x=kCx+s*(545.0f+(a-1.0f)*390.0f);
+                scale=std::max(0.50f,0.88f-0.10f*(a-1.0f));
+                yaw=s*0.18f;
             }
             const float alpha=std::clamp(1.0f-(a-3.0f),0.0f,1.0f);
             const bool focused=i==m_selected && a<0.5f;
             const float sway=std::sin(float(m_elapsed)*0.9f)*0.06f*
                 (1.0f-std::min(a*2.0f,1.0f));
-            DrawTile(i,x,kCy,kTileW*scale,kTileH*scale,yaw+sway,alpha,focused,pass==0);
+            const PorpoiseTexture* texture =
+                static_cast<size_t>(i)<m_art.size() ? m_art[static_cast<size_t>(i)] : nullptr;
+            const float ratio = texture
+                ? SNESXYImageRatio(texture->width,texture->height)
+                : kSNESXYDefaultBoxRatio;
+            // Sizes are calculated per ROM, not per catalogue. Landscape
+            // covers get wide cases while rarer portrait covers stay tall.
+            const SNESXYCoverSize dimensions =
+                SNESXYCaseSize(ratio,kTileH,525.0f,scale);
+            DrawTile(i,x,kCy,dimensions.width,dimensions.height,
+                     yaw+sway,alpha,focused,pass==0);
         }
     if(m_selected>0) g.glyph(Glyph::Arrow,34,kCy,46,rgba(0x58B8FF),-kPi*0.5f);
     if(m_selected+1<shown) g.glyph(Glyph::Arrow,1886,kCy,46,rgba(0x58B8FF),kPi*0.5f);

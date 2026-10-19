@@ -1,10 +1,10 @@
 {
   "name": "SNESXY",
-  "version": "1.0.7",
-  "releaseTag": "snesxy-v1.0.7",
+  "version": "1.0.8",
+  "releaseTag": "snesxy-v1.0.8",
   "titleId": "PPSA99205",
   "core": "bsnes-mercury balanced",
-  "frontend": "SNESXY 3D CoverFlow",
+  "frontend": "SNESXY adaptive aspect-ratio 3D CoverFlow",
   "themes": [
     "Royal Indigo",
     "Sunset Arcade",
