@@ -10,7 +10,7 @@
   "conceptId": "99205",
   "contentBadgeType": 1,
   "contentId": "UP9000-PPSA99205_00-PS5SNES000000001",
-  "contentVersion": "01.000.006",
+  "contentVersion": "01.000.007",
   "downloadDataSize": 256,
   "gameIntent": {
     "permittedIntents": [
@@ -22,7 +22,7 @@
   "localizedParameters": {
     "defaultLanguage": "en-US",
     "en-US": {
-      "titleName": "PS5SNES"
+      "titleName": "SNESXY"
     }
   },
   "masterVersion": "01.00",

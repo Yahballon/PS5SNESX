@@ -40,7 +40,7 @@ bool ShelfRuntime::Start(const std::string& path,fe::Renderer& renderer) {
     core.SetOption("bsnes_violate_accuracy","enabled");
     core.SetOption("bsnes_chip_hle",get("SNES/ChipMode","HLE"));
     core.SetOption("bsnes_gamma_ramp",get("SNES/Gamma","disabled"));
-    aspect=get("SNES/Aspect","4:3");bindings.Load(options);sound=get("SNES/Sound","true")=="true";
+    aspect=get("SNES/Aspect","16:9");bindings.Load(options);sound=get("SNES/Sound","true")=="true";
     if(!core.Load(path,std::move(rom))){error=core.error;return false;}
     resampler.Reset(core.sample_rate);
     if(sound){audio=std::make_unique<ShelfAudio>();if(!audio->Open()){error="SNES audio port failed";audio.reset();}}
@@ -58,7 +58,7 @@ bool ShelfRuntime::Build(fe::Renderer& renderer,fe::FrameDesc& frame,uint32_t ra
     if(input.save||input.load) {
         const bool okay=input.save?core.SaveState():core.LoadState();
         if(!okay)error=core.error;
-        std::printf("[nes] state %s: %s\n",input.save?"save":"load",okay?"OK":core.error.c_str());
+        std::printf("[snesxy] state %s: %s\n",input.save?"save":"load",okay?"OK":core.error.c_str());
     }
     core.buttons[0]=input.joypad;
     if(previous==0){previous=now;last_save=now;accumulated=1/core.fps;}
@@ -77,7 +77,8 @@ bool ShelfRuntime::Build(fe::Renderer& renderer,fe::FrameDesc& frame,uint32_t ra
     frame.bg.glow_pos[2]=frame.bg.glow_pos[3]=1;
     frame.bg.floor_glow[2]=frame.bg.floor_glow[3]=1;
     frame.bg.misc[0]=float(renderer.width())/renderer.height();frame.bg.misc[1]=0.5f;
-    float w=renderer.width(),h=renderer.height();float width=std::min(w,h*4.0f/3.0f),height=width*3.0f/4.0f;
+    float w=renderer.width(),h=renderer.height();float width=w,height=h;
+    if(aspect=="4:3"){width=std::min(w,h*4.0f/3.0f);height=width*3.0f/4.0f;}
     if(aspect=="Integer"){float scale=std::max(1.0f,std::floor(std::min(w/core.width,h/core.height)));width=core.width*scale;height=core.height*scale;}
     const float x=(w-width)/2,y=(h-height)/2;
     auto vertex=[](float x,float y,float u,float v){return fe::UiVertex{x,y,u,v,0xffffffff,0,0,0,2};};

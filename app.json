@@ -1,0 +1,17 @@
+{
+  "name": "SNESXY",
+  "version": "1.0.7",
+  "releaseTag": "snesxy-v1.0.7",
+  "titleId": "PPSA99205",
+  "core": "bsnes-mercury balanced",
+  "frontend": "SNESXY 3D CoverFlow",
+  "themes": [
+    "Royal Indigo",
+    "Sunset Arcade",
+    "Emerald Circuit",
+    "Glacier Glass",
+    "Midnight Gold"
+  ],
+  "romPath": "/data/PS5SNES/games",
+  "compatibleWith": "PS5SNESX"
+}
