@@ -1,107 +1,70 @@
-# PS5SNES is a passion project, not a piracy project.
-<p align="center">
-  <img src="screenshots/background.png" alt="PS5NES game shelf">
-</p>
-PS5SNES is a standalone PS5 homebrew emulator using the **bsnes-mercury balanced** core and the original PS5SX2 cover-flow interface. It is a separate project with its own application ID (`PPSA99205`) and data directory (`/data/PS5SNES`). Development and documentation were **AI-assisted**.
+<div align="center">
 
-## Latest update
+# SNESXY
 
-- Local and USB folders are scanned at startup even when a library cache exists.
-- Offline IPv4 NAS checks avoid long startup retries and preserve local games.
-- Empty-library hints use the correct PS5SNES folders and disappear when games are present.
-- Press **R2** on the shelf to refresh the selected game's cover. The existing image is retained if downloading fails.
-- The [SNES cover repository](https://github.com/Globaleliteee/Gaming_Console_Covers_Art_Repository/tree/main/covers/nintendo/SNES) supplies an index of **723 filenames**. Matching handles case, region, revision/language tags and common title punctuation, with libretro-thumbnails fallback.
-- Earlier failed cover lookups are retried with the new cover-cache namespace.
-- Menu branding is **v6 by YAHBALLON**.
+**16-Bit Memories. Next-Gen Homebrew.**
 
-The v6 repository URLs and image decoding were tested on the host. Validate the
-new cover behavior on your PS5; compatibility across all ROM naming variants is
-not guaranteed. The SNES core remains bsnes-mercury balanced.
+**SNESXY v1.0.7 · by YAHBALLON · PPSA99205**
 
-## Features
+[![Native PS5 Build](https://github.com/Yahballon/PS5SNESX/actions/workflows/build-snesxy.yml/badge.svg)](https://github.com/Yahballon/PS5SNESX/actions/workflows/build-snesxy.yml)
+[![Releases](https://img.shields.io/github/v/release/Yahballon/PS5SNESX?style=flat-square)](https://github.com/Yahballon/PS5SNESX/releases)
 
-- Animated game shelf with a charcoal and violet SNES theme.
-- Cartridge formats: `.sfc`, `.smc`, `.swc`, `.fig`, including common 512-byte copier headers.
-- Single-ROM ZIP loading in memory, with Stored or Deflate compression.
-- Games from internal storage, USB and directly configured NFSv3 shares.
-- Fast cached game library and a loading screen with scan progress.
-- Battery saves, save/load states and configurable controller buttons and shortcuts.
-- Native-clock stereo audio converted continuously to the PS5's 48 kHz audio output.
-- Cover support and a local settings page accessible from a phone or computer.
+</div>
 
-## Installation
+SNESXY is a native Super Nintendo emulator for jailbroken PS5 consoles, based on the **bsnes-mercury balanced** core. Its modern 3D CoverFlow frontend takes inspiration from our NESYX work, while using its own SNES-themed palettes and an original Hypercube startup animation. The repository stays named PS5SNESX to preserve existing links.
 
-Use the application ZIP from a release. Copy its complete `PPSA99205` folder to `/data/homebrew/PPSA99205/` and launch it through your compatible PS5 homebrew launcher. Keep the included modules, filesystem helper and `sce_sys` files together.
+## What's new in v1.0.7
 
-The source archive is for development; it does not contain an installable executable.
+- **3D glass CoverFlow:** animated full-size box art, reflections, smooth movement and cover caching.
+- **Five SNESXY themes:** Royal Indigo (violet/pink), Sunset Arcade (orange/coral), Emerald Circuit (mint green), Glacier Glass (ice blue), and Midnight Gold (black/gold). Change them in **Settings → Appearance → Theme**; saved for the entire library.
+- **16-Bit Hypercube:** animated rotating wireframe cubes with colorful satellites, scanlines, and accurate NFS/ROM scanning counters; wholly separate from NESYX's Pixel Reactor.
+- **Additional SNES cover provider:** [Libretro Named Boxarts](https://thumbnails.libretro.com/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System/Named_Boxarts/) alongside the original SNES collection and Libretro GitHub mirror.
+- **16:9 Fullscreen** by default for new installations; 4:3 and Integer pixels remain available.
+- **Close confirmation:** in the game library, press **○** to open the prompt, **×** to exit, or **○** to cancel.
 
-Place games in `/data/PS5SNES/games/`, or on USB in `/mnt/usb0/homebrew/PS5SNES/games/`. USB0 through USB7 are supported. Additional USB folders and full installation details are in [INSTALL.md](INSTALL.md).
+## Install
 
-For NFS, open **All games → Settings → Network**, enter your export URL (for example `nfs://192.168.0.87/SNES`), save and restart the app. Use **Rescan game library** after changing the files on a share. The example URL is not an automatically configured server.
+Download **`PPSA99205.zip`** from [Releases](https://github.com/Yahballon/PS5SNESX/releases). Extract the complete `PPSA99205` directory and install it using a supported PS5 homebrew launcher (commonly `/data/homebrew/PPSA99205/`). Do not omit `eboot.bin`, `sce_sys/`, `sce_module/` or the packaged helper files.
 
-Configuration, saves, covers, cache and logs live under `/data/PS5SNES/`. The app uses `/download0/PS5SNES/` as a fallback when necessary. The local web settings page uses port **8844**.
+> **Update safely:** Existing games, battery saves, save states, configurations, cover art and logs are intentionally kept in `/data/PS5SNES/`. **SNESXY does not rename that data directory or change the Title ID `PPSA99205`.**
 
-## Default controls
+Place your own legally acquired `.sfc`, `.smc`, `.swc` or `.fig` games in `/data/PS5SNES/games/`; compatible single-ROM ZIP files are also supported. USB and configured NFSv3 directories can be scanned. For NFS, use **Settings → Network** and restart/rescan the library.
 
-| SNES / action | DualSense |
+## Controls
+
+| Action | DualSense |
 | --- | --- |
-| A / B | Circle / Cross |
-| X / Y | Triangle / Square |
-| L / R | L1 / R1 |
-| Start | Options |
-| Select | Touchpad click / Create |
-| Directions | D-pad / left stick |
-| Save state | L3 + R3 + D-pad Up |
-| Load state | L3 + R3 + D-pad Down |
-| Return to game shelf | L1 + R1 + Touchpad click |
+| Browse SNES games | D-pad / left stick |
+| Launch selected game | × |
+| Open Settings | □ |
+| Close app prompt (library only) | ○ |
+| Confirm exit / Cancel | × / ○ |
+| SNES A / B / X / Y | ○ / × / △ / □ in-game |
+| SNES L / R | L1 / R1 |
+| Start / Select | Options / Touchpad click or Create |
+| Save / Load state | L3 + R3 + D-pad Up / Down |
+| Return from SNES game | L1 + R1 + Touchpad click |
+| Refresh selected cover | R2 |
 
-Open **Square → R2 / Controls** to customize buttons globally or per game. The menu combination also provides a two-second emergency hold after remapping. There is one save-state slot per ROM.
+## Builds and source
 
-## Building from source
+[**Native Build & Release workflow**](.github/workflows/build-snesxy.yml) runs the SNESXY regression tests, provisions the pinned open-source PS5 toolchain, builds the native executable and creates `PPSA99205.zip`. Main-branch builds publish a release tagged `snesxy-v1.0.7`. The version is recorded in `app.json` and `snes/src/snesxy_build_version.h`.
 
-See [BUILDING.md](BUILDING.md) for the dependency layout and public upstream projects. The console build requires Linux/WSL, Clang/LLD 18 and a prepared public PS5 SDK, PS5_Vulkan, libnfs and HTTPS dependency environment.
-
-```bash
-PS5SNES_DEPS=/path/to/prepared/deps bash snes/tools/build.sh
+```text
+snes/src/                  SNES core integration, runtime and Hypercube loader
+snes/third_party/          bsnes-mercury balanced source
+snes/tools/                Native build and host tests
+ps5/frontend/              SNESXY CoverFlow, settings, SNES cover worker
+ps5/porpoise_original/     Licensed Vulkan/Porpoise UI components
+ps5/frontend/assets/       Embedded icons and menu files
+scripts/                   Pinned PS5 toolchain bootstrap
+.github/workflows/         Automated native build and release
 ```
 
-Output: `snes/build-shelf/PS5SNES-v6-Repository-Covers-by-YAHBALLON.zip`.
+For manual builds, see [BUILDING.md](BUILDING.md). A prepared PS5 SDK/Vulkan build environment is required; building on ordinary Windows without the appropriate console toolchain does not produce a usable PS5 package.
 
-The inherited root PCSX2 CMake project is not the PS5SNES app build entry point. Use the script above. Prepared binary dependencies are not included in this source archive; a complete fresh-machine dependency bootstrap is not provided.
+## Credits and legal
 
-Run the host integration test on Linux/WSL with Clang 18, Make and host zlib development headers:
+**SNESXY by YAHBALLON.** Built using the open-source [bsnes-mercury](https://github.com/libretro/bsnes-mercury) core, PS5 homebrew frameworks and the appropriately licensed Porpoise frontend. Other upstream contributors and licenses are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [COPYING.GPLv3](COPYING.GPLv3) and the bundled dependency directories.
 
-```bash
-python3 snes/tools/test.py
-```
-
-The test generates original LoROM and SPC700 code and checks real emulation, video, audio, controller inputs, battery saves, save states, ZIP loading, copier headers and PAL timing. No commercial ROM or Nintendo firmware is supplied. The build also verifies native memory parameters and signed executable integrity.
-
-For a reproducible source ZIP and checksum verification, see [GITHUB_UPDATE.md](GITHUB_UPDATE.md).
-
-## Scope and compatibility
-
-Normal SNES cartridges and one active player are exposed. Enhancement-chip HLE is used where supported. Super Game Boy, Satellaview, Sufami Turbo, MSU-1 external data and light guns are not integrated into this frontend.
-
-Automated testing was performed on the host. Successful PS5 operation has been reported by the user; compatibility and performance across all games have not been exhaustively tested.
-
-## Project layout
-
-| Path | Purpose |
-| --- | --- |
-| `snes/src/` | SNES frontend integration, storage, controller mapping and runtime |
-| `snes/tools/` | Console build, memory checks and host tests |
-| `snes/third_party/bsnes-mercury/` | Vendored, pinned SNES core |
-| `snes/sce_sys/` | App metadata and launcher icon |
-| `snes/assets/` | Supplied original logo |
-| `ps5/frontend/` | Original PS5SX2 shelf and settings interface |
-| `ps5/proto/native/` | Native application tooling |
-
-## Credits and licenses
-
-- **YAHBALLON** — customization and supplied logo.
-- **Spyros and PCSX2 contributors** — original PS5SX2 frontend and scaffold.
-- **bsnes-mercury / Libretro contributors** — SNES emulation core.
-- **mihawk-99, BlackBearReloaded, Lapy and supporting library contributors** — PS5 graphics, SDK, native tooling and filesystem support.
-
-Integration code is GPL-3.0-or-later. Preserve the original component notices and license texts when redistributing. See [COPYING.GPLv3](COPYING.GPLv3) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). This project is not affiliated with Nintendo, Sony or the upstream projects.
+No commercial SNES games, BIOS files or other copyrighted ROMs are provided. This community project is not affiliated with Sony or Nintendo.
