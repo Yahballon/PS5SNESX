@@ -178,10 +178,12 @@ jobs:
           bash "$root/ps5/tools/build-libnfs.sh" \
             "$deps/libnfs" "$deps/libnfs-output" \
             "$deps/PS5_Vulkan/.deps/native/ps5-payload-sdk/toolchain/prospero.cmake"
-          git clone -q --depth 1 \
-            https://github.com/blackbearreloaded/ps5-native-app-boilerplate.git \
-            "$deps/filesystem-helper"
-          bash "$deps/filesystem-helper/tools/setup-pacbrew-dependencies.sh" --resolve libcurl
+          # The upstream boilerplate repository is no longer publicly
+          # cloneable. Use our checked-in, pinned GPL-3.0 PacBrew resolver
+          # (verified against GBAXY's working native build) instead.
+          mkdir -p "$deps/filesystem-helper"
+          PACBREW_ROOT="$deps/filesystem-helper" \
+            bash "$root/ps5/tools/setup-pacbrew-dependencies.sh" --resolve libcurl
           for lib in curl psl ssl crypto zstd z; do
             test -s "$deps/filesystem-helper/.deps/pacbrew/v0.40.2/sysroot/user/homebrew/lib/lib$lib.a"
           done
