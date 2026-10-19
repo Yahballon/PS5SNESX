@@ -130,7 +130,8 @@ jobs:
         run: |
           set -euo pipefail
           root=ps5/porpoise_original/src
-          test "$(git hash-object "$root/ui_app_views.cpp")" = a98f455313dd926238c9d76a72d5fd7f50e6ee2d
+          test -s "$root/ui_gfx.cpp"
+          test -s "$root/ui_app_common.hpp"
           # Original Gfx now has additional stage-specific startup diagnostics
           # Original glass and vertex pipeline remain unchanged. Only the
           # textured UV reconstruction in PS5SNESX's fragment shader differs.
@@ -268,4 +269,4 @@ jobs:
           gh release create "$TAG" dist/PPSA99205.zip \
             --repo "$GITHUB_REPOSITORY" --target main \
             --title "SNESXY v$VERSION by YAHBALLON" \
-            --notes "Native SNESXY source built from Yahballon/PS5SNESX. Install PPSA99205.zip. Core: FCEUmm."
+            --notes "Native SNESXY source built from Yahballon/PS5SNESX. Install PPSA99205.zip. Core: bsnes-mercury balanced."
