@@ -1,7 +1,7 @@
 {
   "name": "SNESXY",
-  "version": "1.0.8",
-  "releaseTag": "snesxy-v1.0.8",
+  "version": "1.0.9",
+  "releaseTag": "snesxy-v1.0.9",
   "titleId": "PPSA99205",
   "core": "bsnes-mercury balanced",
   "frontend": "SNESXY adaptive aspect-ratio 3D CoverFlow",

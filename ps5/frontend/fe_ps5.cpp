@@ -71,6 +71,8 @@ int sceUserServiceGetInitialUser(int32_t* userId);
 int sceKernelConvertUtcToLocaltime(time_t utc, time_t* local, KernelTimesec* sec, uint64_t* dst_sec);
 int sceSystemServiceParamGetInt(int param, int* value);
 int sceSystemServiceHideSplashScreen(void);
+// Exit through the PS5 shell, not libc exit (SIGSYS on this firmware).
+[[noreturn]] void snesxy_exit_to_shell(const char* reason);
 
 // libSceNet, libSceSsl and libSceHttp2 as the payload SDK's http2_get sample declares them. The
 // system loads all three into every app already, so linking them adds nothing at start-up.
@@ -1822,9 +1824,9 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	}
 
     if (app.ExitRequested()) {
-        std::printf("[SNESXY] All native resources released; exiting\\n");
-        std::fflush(stdout);
-        ::exit(0); // main_shelf.cpp would otherwise sleep forever.
+        std::printf("[SNESXY] Native resources closed; requesting PS5 system exit\n");
+        std::fflush(nullptr);
+        snesxy_exit_to_shell("CoverFlow exit confirmed");
     }
 	if (!picked)
 	{

@@ -4,7 +4,7 @@
 
 **16-Bit Memories. Next-Gen Homebrew.**
 
-**SNESXY v1.0.8 · by YAHBALLON · PPSA99205**
+**SNESXY v1.0.9 · by YAHBALLON · PPSA99205**
 
 [![Native PS5 Build](https://github.com/Yahballon/PS5SNESX/actions/workflows/build-snesxy.yml/badge.svg)](https://github.com/Yahballon/PS5SNESX/actions/workflows/build-snesxy.yml)
 [![Releases](https://img.shields.io/github/v/release/Yahballon/PS5SNESX?style=flat-square)](https://github.com/Yahballon/PS5SNESX/releases)
@@ -13,7 +13,9 @@
 
 SNESXY is a native Super Nintendo emulator for jailbroken PS5 consoles, based on the **bsnes-mercury balanced** core. Its modern 3D CoverFlow frontend takes inspiration from our NESYX work, while using its own SNES-themed palettes and an original Hypercube startup animation. The repository stays named PS5SNESX to preserve existing links.
 
-## What's new in v1.0.8
+## What's new in v1.0.9
+
+- **Native PS5 exit fix:** Closing with ○ then × now uses `sceSystemServiceLoadExec("exit", nullptr)` after native resource cleanup, not libc `exit()` (which can trigger SIGSYS). The CRT main-return path is protected too. Existing games, saves and title ID stay untouched.
 
 - **Native SNES box proportions:** Landscape SNES covers render on **wide glass cases**; rarer portrait artwork stays in taller cases. Every cover preserves its image ratio and full image without cropping, and reflections match the case size. Cached artwork is reused automatically—no cover-cache reset.
 
@@ -50,7 +52,7 @@ Place your own legally acquired `.sfc`, `.smc`, `.swc` or `.fig` games in `/data
 
 ## Builds and source
 
-[**Native Build & Release workflow**](.github/workflows/build-snesxy.yml) runs the SNESXY regression tests, provisions the pinned open-source PS5 toolchain, builds the native executable and creates `PPSA99205.zip`. Main-branch builds publish a release tagged `snesxy-v1.0.8`. The version is recorded in `app.json` and `snes/src/snesxy_build_version.h`.
+[**Native Build & Release workflow**](.github/workflows/build-snesxy.yml) runs the SNESXY regression tests, provisions the pinned open-source PS5 toolchain, builds the native executable and creates `PPSA99205.zip`. Main-branch builds publish a release tagged `snesxy-v1.0.9`. The version is recorded in `app.json` and `snes/src/snesxy_build_version.h`.
 
 ```text
 snes/src/                  SNES core integration, runtime and Hypercube loader

@@ -8,6 +8,23 @@
 #include <sys/stat.h>
 #include <unistd.h>
 extern "C" int sceNetInit();
+extern "C" int sceSystemServiceLoadExec(const char* path,const char* const* argv);
+extern "C" int sceKernelUsleep(unsigned int microseconds);
+
+// Native PS5 titles are closed by the shell. Calling libc exit() crashes
+// with SIGSYS (12) on this console. Also override CRT main-return handler.
+extern "C" [[noreturn]] void snesxy_exit_to_shell(const char* reason) {
+    std::printf("[SNESXY] PS5 shell exit requested: %s\n",reason?reason:"unknown");
+    std::fflush(nullptr);
+    const int rc=sceSystemServiceLoadExec("exit",nullptr);
+    std::printf("[SNESXY] LoadExec returned rc=0x%08x; waiting for system\n",unsigned(rc));
+    std::fflush(nullptr);
+    for(;;)sceKernelUsleep(100000);
+}
+extern "C" [[noreturn]] void catchReturnFromMain(int status) {
+    std::printf("[SNESXY] CRT returned status=%d\n",status);
+    snesxy_exit_to_shell("CRT main return");
+}
 int main() {
     sceNetInit();
     const auto access=elevation::request(elevation::Capability::filesystem);
@@ -19,17 +36,17 @@ int main() {
     setenv("PS5VK_SHADER_CACHE_DIR",(root+"/cache/ps5vk-shader-cache").c_str(),1);
     int fd=open((root+"/logs/boot.log").c_str(),O_WRONLY|O_CREAT|O_TRUNC|O_APPEND,0666);
     if(fd>=0){dup2(fd,fileno(stdout));dup2(fd,fileno(stderr));close(fd);setvbuf(stdout,nullptr,_IOLBF,4096);}
-    std::printf("[boot] SNESXY v1.0.7 by YAHBALLON (AI-assisted), original PS5SX2 shelf, filesystem=%u\n",unsigned(access));
+    std::printf("[boot] SNESXY v1.0.9 by YAHBALLON (AI-assisted), original PS5SX2 shelf, filesystem=%u\n",unsigned(access));
     OrbisFrontendPaths paths;paths.top_dir=root;paths.games_dir=root+"/games";paths.settings_dir=root+"/settings";
     paths.gs_ini=root+"/gs.ini";paths.covers_dir=root+"/covers";paths.cache_dir=root+"/cache";
     paths.logs_dir=root+"/logs";paths.settings_log=root+"/logs/settings.log";paths.serial_cache=root+"/cache/serials.txt";
     paths.usb_list=root+"/cache/usb-games.txt";paths.allow_download=true;paths.sound=true;
-    paths.report_header="SNESXY v1.0.7 by YAHBALLON (AI-assisted)";
+    paths.report_header="SNESXY v1.0.9 by YAHBALLON (AI-assisted)";
     for(int i=0;i<8;++i){auto usb="/mnt/usb"+std::to_string(i);
         for(const char* folder:{"/homebrew/PS5SNES/games","/homebrew/PS5SNES/roms","/PS5SNES/games","/PS5SNES/roms","/homebrew/PPSA99205/games","/homebrew/PPSA99205/roms","/SNES"})paths.usb_dirs.push_back(usb+folder);}
     for(const char* local:{"/data/PS5SNES/games","/data/PS5SNES/roms","/data/SNES","/data/homebrew/PPSA99205/games","/data/homebrew/PPSA99205/roms"})paths.usb_dirs.push_back(local);
     orbis_frontend_set_language(root+"/lang");
-    orbis_web_start(paths,"v1.0.7 by YAHBALLON");
-    bool ran=false;orbis_frontend_run(paths,"v1.0.7 by YAHBALLON",&ran);
-    for(;;)sleep(1);
+    orbis_web_start(paths,"v1.0.9 by YAHBALLON");
+    bool ran=false;orbis_frontend_run(paths,"v1.0.9 by YAHBALLON",&ran);
+    snesxy_exit_to_shell("frontend completed");
 }
