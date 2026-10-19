@@ -15,6 +15,7 @@
 
 #include "fe_app.h"
 #include "fe_covers.h"
+#include "fe_exact_porpoise.h"
 #include "cover_urls.h"
 #include "fe_games.h"
 #include "fe_i18n.h"
@@ -31,6 +32,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib> // ::exit after releasing Vulkan and the controller
 #include <cstring>
 #include <ctime>
 #include <dirent.h>
@@ -143,6 +145,30 @@ FE_INCBIN_ASSET(fe_web_discord, "web/discord.svg");
 FE_INCBIN_ASSET(fe_web_x, "web/x-twitter.svg");
 // vk-285-51: the recommended settings the page's Recommended button restores.
 FE_INCBIN_ASSET(fe_presets, "presets.ini");
+// Project Porpoise original menu effects, copyright Ruben (@elripalda),
+// GPL-3.0-or-later; fetched from a pinned upstream commit during CI.
+FE_INCBIN_ASSET(fe_porpoise_game_row, "sounds/game-row.wav");
+FE_INCBIN_ASSET(fe_porpoise_menu_scroll, "sounds/menu-scroll.wav");
+// Original Porpoise font and icon files shipped inside our eboot, so the
+// default /app0 mount path is NOT a runtime dependency on PS5 homebrew.
+FE_INCBIN_ASSET(fe_pp_nunito_regular, "porpoise/fonts/Nunito-Regular.ttf");
+FE_INCBIN_ASSET(fe_pp_nunito_semibold, "porpoise/fonts/Nunito-SemiBold.ttf");
+FE_INCBIN_ASSET(fe_pp_nunito_bold, "porpoise/fonts/Nunito-Bold.ttf");
+FE_INCBIN_ASSET(fe_pp_nunito_extrabold, "porpoise/fonts/Nunito-ExtraBold.ttf");
+FE_INCBIN_ASSET(fe_pp_noto_jp, "porpoise/fonts/NotoSansJP-Porpoise.ttf");
+// The built-in tiger replaces the original Dolphin brand mask.
+FE_INCBIN_ASSET(fe_pp_dolphin_mask, "snesxy-mark.png");
+FE_INCBIN_ASSET(fe_pp_buttons, "porpoise/ui/buttons.png");
+// A original 1024x1536 user-supplied NO COVER PNG is baked into eboot.bin (works offline).
+FE_INCBIN_ASSET(fe_snesxy_default, "snesxy-mark.png");
+extern "C" const uint8_t fe_pp_nunito_regular[], fe_pp_nunito_regular_end[],
+    fe_pp_nunito_semibold[], fe_pp_nunito_semibold_end[],
+    fe_pp_nunito_bold[], fe_pp_nunito_bold_end[],
+    fe_pp_nunito_extrabold[], fe_pp_nunito_extrabold_end[],
+    fe_pp_noto_jp[], fe_pp_noto_jp_end[],
+    fe_pp_dolphin_mask[], fe_pp_dolphin_mask_end[],
+    fe_pp_buttons[], fe_pp_buttons_end[];
+
 extern "C" const uint8_t fe_font_brands[], fe_font_brands_end[], fe_web_page[], fe_web_page_end[], fe_web_discord[],
 	fe_web_discord_end[], fe_web_x[], fe_web_x_end[], fe_presets[], fe_presets_end[];
 
@@ -151,7 +177,61 @@ namespace
 using namespace fe;
 
 // xlenore/ps2-covers, the default set: <serial>.jpg, 512x736 (the same source as the user's Twiso).
-constexpr const char* kCoverUrl = "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Super_Nintendo_Entertainment_System/master/Named_Boxarts/${title}.png";
+constexpr const char* kCoverUrl = "https://thumbnails.libretro.com/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System/Named_Boxarts/${title}.png";
+
+
+struct EmbeddedPorpoiseAsset { const char* name; const uint8_t* begin; const uint8_t* end; };
+bool PreparePorpoiseAssets(const std::string& root)
+{
+    const EmbeddedPorpoiseAsset assets[] = {
+        {"fonts/Nunito-Regular.ttf", fe_pp_nunito_regular, fe_pp_nunito_regular_end},
+        {"fonts/Nunito-SemiBold.ttf", fe_pp_nunito_semibold, fe_pp_nunito_semibold_end},
+        {"fonts/Nunito-Bold.ttf", fe_pp_nunito_bold, fe_pp_nunito_bold_end},
+        {"fonts/Nunito-ExtraBold.ttf", fe_pp_nunito_extrabold, fe_pp_nunito_extrabold_end},
+        {"fonts/NotoSansJP-Porpoise.ttf", fe_pp_noto_jp, fe_pp_noto_jp_end},
+        {"brand/dolphin-mask.png", fe_pp_dolphin_mask, fe_pp_dolphin_mask_end},
+        {"ui/buttons.png", fe_pp_buttons, fe_pp_buttons_end},
+    };
+    for (const std::string& dir : {root, root + "/fonts", root + "/brand", root + "/ui"})
+    {
+        if (mkdir(dir.c_str(), 0777) && errno != EEXIST)
+        {
+            std::printf("[Porpoise Exact] mkdir(%s): errno %d\n", dir.c_str(), errno);
+            return false;
+        }
+    }
+    for (const auto& a : assets)
+    {
+        const std::string name = root + "/" + a.name;
+        const size_t bytes = static_cast<size_t>(a.end - a.begin);
+        struct stat st{};
+        if (stat(name.c_str(), &st) == 0 && static_cast<size_t>(st.st_size) == bytes)
+            continue;
+        const std::string tmp = name + ".new";
+        int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (fd < 0)
+        {
+            std::printf("[Porpoise Exact] open(%s): errno %d\n", tmp.c_str(), errno);
+            return false;
+        }
+        size_t done = 0;
+        bool complete = true;
+        while (done < bytes)
+        {
+            const ssize_t n = write(fd, a.begin + done, bytes - done);
+            if (n <= 0) { complete = false; break; }
+            done += static_cast<size_t>(n);
+        }
+        if (close(fd) || !complete || rename(tmp.c_str(), name.c_str()))
+        {
+            unlink(tmp.c_str());
+            std::printf("[Porpoise Exact] asset write failed: %s\n", name.c_str());
+            return false;
+        }
+    }
+    std::printf("[Porpoise Exact] original embedded UI assets are ready at %s\n", root.c_str());
+    return true;
+}
 
 // The key sounds' output: a port on the main output, float stereo at 48 kHz in 256-frame grains,
 // opened the way PCSX2's own output opens it once the game runs (system user, main port, format 4),
@@ -1200,7 +1280,7 @@ bool orbis_web_start(const OrbisFrontendPaths& paths, const char* build_tag)
 	cfg.cache_dir = paths.cache_dir;
 	cfg.build_tag = build_tag ? build_tag : "";
 	cfg.port = 8844;
-	cfg.presets.clear(); // (AI-assisted) SNES defaults come from the SNES option groups.
+	cfg.presets.clear(); // (AI-assisted) NES defaults come from the NES option groups.
 	cfg.change_log = paths.settings_log;
 	// Test build 1 (vk-285-55): the logs download.
 	cfg.logs_dir = paths.logs_dir;
@@ -1401,7 +1481,16 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
     while(loading_ok) {
         auto progress=loading.Snapshot(scanning_done);
         loading_ok=show_loading(progress,scanning_done);
-        if(scanning_done)break;
+        if(scanning_done) {
+            // Show the reactor's completed / online animation briefly,
+            // even when a small library loads almost instantaneously.
+            const double ready_until=Now()+0.32;
+            while (loading_ok && Now()<ready_until) {
+                loading_ok=show_loading(progress,true);
+                usleep(16000);
+            }
+            break;
+        }
         // UI presentation remains on this thread; NFS only runs on the scanner.
         usleep(1000);
     }
@@ -1462,10 +1551,38 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	cc.url_template = kCoverUrl;
     cc.resolve_urls=snes::CoverUrls;
 	cc.allow_download = paths.allow_download;
-	cc.download_usb_only = false; // (AI-assisted) Fetch missing local, USB and NFS covers after filesystem access is ready.
+	cc.download_usb_only = false; // Auto-fetch missing covers for local, USB and NFS games.
+	std::printf("[covers] automatic downloads=%s; on-disk cache=%s; near-game priority radius=%d\n",
+		cc.allow_download ? "ON" : "OFF", cc.cache_dir.c_str(), cc.window_radius);
 	cc.download_error = [] { return g_http.last_error.empty() ? std::string("Covers: transport error") : g_http.last_error; };
 	std::printf("[frontend] starting bounded cover worker\n");
 	covers->Start(games, fonts, cc, [](const std::string& url, std::vector<uint8_t>& out) { return g_http.Get(url, out); });
+
+	// The actual Porpoise Gfx renderer, not an NES case shader approximation.
+	// This is opt-in at runtime: if assets, shaders or GPU init fail, the
+	// previously working NES CoverFlow remains the safe fallback.
+	ExactPorpoiseShelf exact;
+	porpoise::ui::GfxInit original_ui{};
+	original_ui.instance=display->instance;
+	original_ui.gpu=display->pd;
+	original_ui.device=display->device;
+	original_ui.queue=display->queue;
+	original_ui.queue_family=display->qf;
+	original_ui.render_pass=renderer.ExactFinalPass();
+	original_ui.slots=2;
+	original_ui.get_instance_proc=vk_icdGetInstanceProcAddr;
+	original_ui.get_device_proc=display->vk.vkGetDeviceProcAddr;
+	original_ui.asset_dir=paths.top_dir+"/porpoise-ui";
+	const bool assets_ready=PreparePorpoiseAssets(original_ui.asset_dir);
+	original_ui.cache_dir=paths.cache_dir+"/porpoise";
+	const bool exact_ready=assets_ready && exact.Init(original_ui,games);
+	if(exact_ready)
+		renderer.SetExactCallbacks(
+			[&exact](unsigned s,float w,float h){exact.Prepare(s,w,h);},
+			[&exact](VkCommandBuffer cmd){exact.Upload(cmd);},
+			[&exact](VkCommandBuffer cmd){exact.Record(cmd);});
+	std::printf("[Porpoise Exact] original Gfx %s; NES emulation remains separate\\n",
+		exact_ready?"active":"unavailable, legacy fallback");
 
 	// The key sounds (vk-285-47). Without an audio port the shelf is simply quiet.
 	Mixer* mixer = nullptr;
@@ -1498,6 +1615,8 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	acfg.test_note = paths.test_note; // vk-285-105
 	acfg.preselect = preselect;
 	acfg.sound = mixer;
+	acfg.exact = exact_ready ? &exact : nullptr;
+	acfg.exact_failed = !exact_ready;
 	// vk-285-114: the options sheet (Square) edits the files the settings page does, and logs as it does.
 	acfg.options.settings_dir = paths.settings_dir;
 	acfg.options.gs_ini = paths.gs_ini;
@@ -1589,6 +1708,10 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
         else
         {
             app.Update(dt, in);
+            if (app.ExitRequested()) {
+                std::printf("[SNESXY] Confirmed close from the home screen\\n");
+                break; // Proceed through normal Vulkan/audio/HTTP/pad teardown.
+            }
             app.Build(frame, Clock());
             if (app.Done() && app.Chosen() >= 0 && static_cast<size_t>(app.Chosen()) < games.size())
             {
@@ -1601,6 +1724,11 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
                 else orbis_web_now_playing(games[static_cast<size_t>(app.Chosen())].path);
             }
         }
+		// The unmodified NES game renderer runs without any menu overlay.
+		// Settings sheet is rendered by PS5SNESX after the background pass.
+		// Disable the full-screen Porpoise overlay while the sheet is shown,
+		// otherwise it hides the panel and Square seems to do nothing.
+		renderer.ExactEnabled(exact_ready && !nes_game.Active());
 		if (!renderer.WaitForSlot())
 		{
 			ok = false;
@@ -1661,6 +1789,9 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 	const int chosen = app.Chosen();
 	const bool picked = ok && app.Done();
 	renderer.WaitIdle();
+	renderer.ExactEnabled(false);
+	renderer.SetExactCallbacks({}, {}, {});
+	exact.Shutdown();
 	app.Shutdown();
 	// The worker may be inside a download: stop it from starting another, fail the one in flight,
 	// give it a moment, then leave it behind if need be.
@@ -1690,6 +1821,11 @@ std::string orbis_frontend_run(const OrbisFrontendPaths& paths, const char* buil
 		delete mixer;
 	}
 
+    if (app.ExitRequested()) {
+        std::printf("[SNESXY] All native resources released; exiting\\n");
+        std::fflush(stdout);
+        ::exit(0); // main_shelf.cpp would otherwise sleep forever.
+    }
 	if (!picked)
 	{
 		std::printf("[frontend] stopped without a pick; the plain list takes over\n");

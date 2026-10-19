@@ -20,6 +20,7 @@
 
 namespace fe
 {
+class ExactPorpoiseShelf;
 struct Input
 {
 	bool left = false, right = false, cross = false, options = false, l1 = false, r1 = false;
@@ -33,6 +34,8 @@ struct AppConfig
 	std::string build_tag;   // shown small in the corner
 	int preselect = 0;       // the game selected at start
 	SoundSink* sound = nullptr; // told about steps and the launch (may be null)
+	ExactPorpoiseShelf* exact = nullptr; // original Porpoise UI renderer
+	bool exact_failed = false; // show a visible failure, never silently revert
 	int test_build = 0;          // test build 1 (vk-285-55): > 0 draws TESTING and build_label mid-screen
 	std::string build_label;     // "Test build 1 · vk-285-55"
 	std::string test_note;       // vk-285-105: a smaller line under build_label (the testers' Discord)
@@ -55,13 +58,17 @@ public:
 	// Fills `f` for this moment; `clock` is the time of day to show ("" for none).
 	void Build(FrameDesc& f, const std::string& clock);
 
-	// The settings page's address for the QR tile (vk-285-50): "http://<ip>:<port>/" (vk-285-118: no key), or
-	// empty when there is no network (the tile then says so). Call it again when the address changes.
+	// Companion web settings URL; the 3D shelf no longer shows QR codes.
 	void SetWebUrl(const std::string& url, const std::string& shown);
 
 	// True once a game was picked and its launch animation has played.
 	bool Done() const { return m_done; }
+	bool ExitRequested() const { return m_exit_requested; }
+	bool ExitDialogOpen() const { return m_exit_confirm; }
 	int Chosen() const { return m_selected; }
+	// Native settings are drawn by the legacy panel renderer. The original
+	// Porpoise coverflow must stand down while it opens/closes.
+	bool SheetVisible() const { return m_sheet_open || m_sheet_anim > 0.001f; }
 
 	const std::vector<GameInfo>& games() const { return m_games; }
 
@@ -75,7 +82,7 @@ private:
 		bool dirty = false;
 		float cover_mix = 0;     // animates to 1 once the cover arrives
 		bool has_cover = false;
-		float glow[3] = {0.62f, 0.50f, 0.86f};
+		float glow[3] = {1.0f, 0.035f, 0.07f};
 		bool has_glow = false;
 	};
 
@@ -106,22 +113,17 @@ private:
 	float m_scroll = 0, m_scroll_vel = 0; // the shelf's position (a game index), sprung to m_selected
 	double m_time = 0;
 	double m_select_time = -10;            // when the selection last changed (for the sheen)
-	float m_glow[3] = {0.62f, 0.50f, 0.86f};
+	float m_glow[3] = {1.0f, 0.035f, 0.07f};
 
 	// Held-direction repeat.
 	int m_held = 0;
 	double m_held_for = 0, m_next_repeat = 0;
 	Input m_prev;
 	bool m_released = false; // buttons held at start count only once released
+	bool m_exit_confirm = false; // menu Circle opens an exclusive prompt
+	bool m_exit_requested = false; // menu Cross confirms quit
 
-	// The QR tile (vk-285-50): the code's modules, row by row, 1 = dark.
 	std::string m_web_url, m_web_shown;
-	std::vector<uint8_t> m_qr;
-	int m_qr_size = 0;
-	// vk-285-118 (AI-assisted): Triangle shows the QR code large in the middle (a tester's phone couldn't read the small tile).
-	bool m_qr_big = false;
-	float m_qr_big_anim = 0.0f;
-	bool m_web_known = false; // SetWebUrl was called (the host preview may never call it)
 
 	// vk-285-114: the options sheet: open or not, its slide (0 closed .. 1 open), the focused row, the list's scroll (in
 	// 2160-line pixels), the held-button repeats and the status line's time.

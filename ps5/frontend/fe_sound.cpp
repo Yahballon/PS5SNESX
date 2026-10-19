@@ -14,6 +14,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <cstdio>
+
+
+#if defined(ORBIS_NES)
+// GPLv3 sound assets by Ruben (elripalda), 2026, Project Porpoise.
+// The WAVs are pinned and verified during the native CI build.
+extern "C" const uint8_t fe_porpoise_game_row[], fe_porpoise_game_row_end[];
+extern "C" const uint8_t fe_porpoise_menu_scroll[], fe_porpoise_menu_scroll_end[];
+#endif
 
 namespace fe
 {
@@ -190,6 +200,54 @@ Tap KeyUp(const Tap& down, uint32_t seed)
 }
 } // namespace
 
+
+#if defined(ORBIS_NES)
+// Decode pinned Porpoise stereo PCM WAVs into this frontend's float mixer.
+// Bounded RIFF walking also works when the fmt and data chunks are not adjacent.
+uint16_t Wave16(const uint8_t* p)
+{
+    return static_cast<uint16_t>(p[0] | (static_cast<uint16_t>(p[1]) << 8));
+}
+uint32_t Wave32(const uint8_t* p)
+{
+    return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8) |
+        (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
+}
+bool DecodePorpoiseWav(const uint8_t* data, size_t length, std::vector<float>& clip)
+{
+    if (!data || length < 44 || length > 512u * 1024u ||
+        std::memcmp(data, "RIFF", 4) || std::memcmp(data + 8, "WAVE", 4))
+        return false;
+    bool format_ok = false;
+    const uint8_t* pcm = nullptr;
+    size_t samples = 0;
+    for (size_t at = 12; at + 8 <= length;)
+    {
+        const uint32_t count = Wave32(data + at + 4);
+        const size_t first = at + 8;
+        if (count > length - first)
+            return false;
+        if (!std::memcmp(data + at, "fmt ", 4) && count >= 16)
+            format_ok = Wave16(data + first) == 1 && Wave16(data + first + 2) == 2 &&
+                        Wave32(data + first + 4) == 48000 &&
+                        Wave16(data + first + 12) == 4 &&
+                        Wave16(data + first + 14) == 16;
+        if (!std::memcmp(data + at, "data", 4))
+        {
+            pcm = data + first;
+            samples = count / 2;
+        }
+        at = first + count + (count & 1u);
+    }
+    if (!format_ok || !pcm || samples < 96 || samples > 48000u * 3u || samples % 2)
+        return false;
+    clip.resize(samples);
+    for (size_t i = 0; i < samples; ++i)
+        clip[i] = static_cast<float>(static_cast<int16_t>(Wave16(pcm + i * 2))) / 32768.0f * 0.38f;
+    return true;
+}
+#endif
+
 void SoundBank::Build()
 {
 	// Six keys a little apart in pitch, so a run of steps doesn't sound like a machine.
@@ -282,6 +340,20 @@ void SoundBank::Build()
 		AddChime(m, 0.155f, 1174.66f, 0.12f, 0.34f);
 		m_launch = Finish(std::move(m), 0.42f);
 	}
+#if defined(ORBIS_NES)
+	// In Porpoise the moving game-row and menu-scroll use the original soft
+	// click recordings. Route them through PS5NESX's existing mixer, keeping
+	// our synthesized clips as a safety fallback when a WAV is invalid.
+	std::vector<float> row, repeat;
+	const bool row_ok = DecodePorpoiseWav(fe_porpoise_game_row,
+		static_cast<size_t>(fe_porpoise_game_row_end - fe_porpoise_game_row), row);
+	const bool repeat_ok = DecodePorpoiseWav(fe_porpoise_menu_scroll,
+		static_cast<size_t>(fe_porpoise_menu_scroll_end - fe_porpoise_menu_scroll), repeat);
+	if (row_ok) { m_move.clear(); m_move.push_back(std::move(row)); }
+	if (repeat_ok) { m_repeat.clear(); m_repeat.push_back(std::move(repeat)); }
+	std::printf("[sound] Porpoise cover-change sound: row=%d repeat=%d\n",
+		row_ok ? 1 : 0, repeat_ok ? 1 : 0);
+#endif
 }
 
 const std::vector<float>* SoundBank::Pick(Sfx sfx)

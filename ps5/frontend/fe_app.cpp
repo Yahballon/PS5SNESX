@@ -4,15 +4,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "fe_app.h"
+#include "fe_coverflow_layout.h"
+#include "fe_exact_porpoise.h"
+#include "fe_navigation.h"
 #include "fe_i18n.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-
-extern "C" {
-#include "third_party/qrcodegen/qrcodegen.h"
-}
 
 namespace fe
 {
@@ -23,12 +22,7 @@ const Vec3 kEye(0.0f, 0.30f, 7.8f);
 const Vec3 kTarget(0.0f, -0.16f, 0.0f);
 constexpr float kFovY = 30.0f;
 constexpr float kFloorY = -kBoxHalfH;
-constexpr float kCenterZ = 1.05f;   // the selected case, pulled forward
-constexpr float kSideX = 1.86f;     // the first neighbour's centre
-constexpr float kStepX = 0.56f;     // each further one
-constexpr float kSideZ = -0.55f;
-constexpr float kStepZ = 0.10f;
-constexpr float kSideTurn = 58.0f;  // degrees the neighbours turn towards the centre
+constexpr float kCenterZ = kClassicCenterZ;  // shared native 3D CoverFlow layout
 constexpr int kVisible = 7;         // cases drawn on each side
 
 uint32_t Rgba(float r, float g, float b, float a = 1.0f)
@@ -73,6 +67,9 @@ bool App::Init(Renderer* renderer, const Fonts* fonts, std::vector<GameInfo> gam
 	m_fonts = fonts;
 	m_covers = covers;
 	m_cfg = cfg;
+    // Load global theme before the first Porpoise frame, not only when
+    // the user opens Settings. Subsequent edits reload this same sheet.
+    m_sheet.Open(m_cfg.options, nullptr);
 	m_games = std::move(games);
 	m_slots.assign(m_games.size(), Slot());
 	m_selected = m_games.empty() ? 0 : std::max(0, std::min(cfg.preselect, static_cast<int>(m_games.size()) - 1));
@@ -89,34 +86,16 @@ bool App::Init(Renderer* renderer, const Fonts* fonts, std::vector<GameInfo> gam
 
 void App::SetWebUrl(const std::string& url, const std::string& shown)
 {
-	m_web_known = true;
-	if (url == m_web_url && shown == m_web_shown)
-		return;
-	m_web_url = url;
-	m_web_shown = shown;
-	m_qr.clear();
-	m_qr_size = 0;
-	if (url.empty())
-		return;
-	// Byte mode up to version 10 (57 modules) is plenty for "http://255.255.255.255:65535/" (vk-285-118: no key
-	// after it any more); medium error correction.
-	uint8_t qr[qrcodegen_BUFFER_LEN_FOR_VERSION(10)], tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(10)];
-	if (!qrcodegen_encodeText(url.c_str(), tmp, qr, qrcodegen_Ecc_MEDIUM, 1, 10, qrcodegen_Mask_AUTO, true))
-	{
-		std::printf("[frontend] QR: \"%s\" does not fit\n", url.c_str());
-		return;
-	}
-	m_qr_size = qrcodegen_getSize(qr);
-	m_qr.resize(static_cast<size_t>(m_qr_size) * m_qr_size);
-	for (int y = 0; y < m_qr_size; y++)
-		for (int x = 0; x < m_qr_size; x++)
-			m_qr[static_cast<size_t>(y) * m_qr_size + x] = qrcodegen_getModule(qr, x, y) ? 1 : 0;
+    // Web configuration remains available, but no QR tile is drawn.
+    m_web_url = url;
+    m_web_shown = shown;
 }
 
-// (AI-assisted) Restore the same shelf after the SNES core stops, retaining its selection.
+// (AI-assisted) Restore the same shelf after the NES core stops, retaining its selection.
 void App::Resume(const std::string& status)
 {
     m_done = false; m_launching = false; m_released = false; m_prev = Input{};
+    m_exit_confirm = false; m_exit_requested = false;
     m_select_time = m_time; m_sheet_status = status; m_sheet_status_time = m_time;
 }
 
@@ -140,10 +119,21 @@ bool App::Step(int dir)
 	if (m_games.empty())
 		return false;
 	const int n = static_cast<int>(m_games.size());
-	const int next = std::max(0, std::min(n - 1, m_selected + dir));
+	// Wrap at either end, including L1/R1 jumps. Avoid scrolling across
+	// every intermediate game when the last cover jumps to the first.
+	if (n == 1 || dir == 0)
+		return false;
+	const int raw_next = m_selected + dir;
+	const int next = WrappedGameIndex(m_selected, dir, n);
 	if (next == m_selected)
 		return false;
+	const bool wrapped = raw_next < 0 || raw_next >= n;
 	m_selected = next;
+	if (wrapped)
+	{
+		m_scroll = static_cast<float>(next);
+		m_scroll_vel = 0.0f;
+	}
 	m_select_time = m_time;
 	if (m_covers)
 		m_covers->SetSelected(m_selected);
@@ -179,6 +169,7 @@ void App::PollCovers()
             (std::abs(img.game-m_selected)>12 && std::abs(img.game-centre)>12))
 			continue;
 		Slot& s = m_slots[static_cast<size_t>(img.game)];
+		if (m_cfg.exact && img.kind == CoverImage::Cover) m_cfg.exact->Cover(img);
 		Texture* t = m_renderer->CreateTexture(static_cast<uint32_t>(img.width), static_cast<uint32_t>(img.height),
 			VK_FORMAT_R8G8B8A8_UNORM, img.rgba.data());
 		if (!t)
@@ -224,6 +215,20 @@ void App::Update(double dt, const Input& in)
 		m_sheet_scroll += (m_sheet_scroll_target - m_sheet_scroll) * a;
 	}
 
+    // Exclusive modal input: no accidental game launch or selection changes.
+    if (m_exit_confirm)
+    {
+        if (in.circle && !m_prev.circle) {
+            m_exit_confirm = false;
+            Sound(Sfx::Move, -0.2f);
+        } else if (in.cross && !m_prev.cross) {
+            m_exit_confirm = false;
+            m_exit_requested = true;
+            Sound(Sfx::Move, 0.2f);
+        }
+        m_prev = in;
+        return;
+    }
 	if (m_launching)
 	{
 		if (m_time - m_launch_time > 0.6)
@@ -271,30 +276,20 @@ void App::Update(double dt, const Input& in)
 				Sound(Step(-5) ? Sfx::JumpLeft : Sfx::Edge, -0.25f);
 			if (in.r1 && !m_prev.r1)
 				Sound(Step(5) ? Sfx::JumpRight : Sfx::Edge, 0.25f);
-            if(in.r2&&!m_prev.r2&&!m_games.empty()&&!m_qr_big){
-                const bool queued=m_covers&&m_covers->Refresh(m_selected);
-                m_sheet_status=queued?"Updating selected cover...":"Cover update unavailable";m_sheet_status_time=m_time;
-                Sound(queued?Sfx::Move:Sfx::Edge,0.0f);
+            if(in.r2&&!m_prev.r2&&!m_games.empty()){bool okay=m_covers&&m_covers->Refresh(m_selected);m_sheet_status=okay?"Updating selected cover...":"Cover update unavailable";m_sheet_status_time=m_time;}
+            if (in.circle && !m_prev.circle && m_sheet_anim < 0.05f) {
+                m_exit_confirm = true;
+                m_held = 0;
+                Sound(Sfx::Move, 0.0f);
             }
-			if (((in.cross && !m_prev.cross) || (in.options && !m_prev.options)) && !m_games.empty() && !m_qr_big)
+            else if (((in.cross && !m_prev.cross) || (in.options && !m_prev.options)) && !m_games.empty())
 			{
 				m_launching = true;
 				m_launch_time = m_time;
 				Sound(Sfx::Launch, 0.0f);
 			}
-			// vk-285-118: Triangle shows the QR code large (and Triangle or Circle puts it back).
-			else if (m_qr_big && ((in.triangle && !m_prev.triangle) || (in.circle && !m_prev.circle)))
-			{
-				m_qr_big = false;
-				Sound(Sfx::Move, -0.3f);
-			}
-			else if (!m_qr_big && in.triangle && !m_prev.triangle && m_qr_size > 0 && m_sheet_anim < 0.05f)
-			{
-				m_qr_big = true;
-				Sound(Sfx::Move, 0.3f);
-			}
-			// vk-285-114: Square opens the selected game's options sheet (the settings for all games when there is no game).
-			else if (!m_qr_big && in.square && !m_prev.square && m_sheet_anim < 0.05f)
+			// Square opens the options sheet without a QR overlay.
+			else if (in.square && !m_prev.square && m_sheet_anim < 0.05f)
 			{
 				OpenSheet(m_games.empty());
 				Sound(Sfx::Move, 0.3f);
@@ -302,11 +297,6 @@ void App::Update(double dt, const Input& in)
 		}
 		m_prev = in;
 	}
-
-	m_qr_big_anim += (m_qr_big ? 1.0f : -1.0f) * fdt / 0.18f; // vk-285-118
-	m_qr_big_anim = std::min(1.0f, std::max(0.0f, m_qr_big_anim));
-	if (m_qr_size <= 0)
-		m_qr_big = false;
 
 	// The shelf follows the selection on a critically damped spring.
 	const float k = 150.0f, c = 2.0f * std::sqrt(k);
@@ -323,7 +313,7 @@ void App::Update(double dt, const Input& in)
 		if (s.has_cover && s.cover_mix < 1.0f)
 			s.cover_mix = std::min(1.0f, s.cover_mix + fdt / 0.35f);
 
-	const float house[3] = {0.62f, 0.50f, 0.86f};
+	const float house[3] = {1.0f, 0.035f, 0.07f};
 	float want[3] = {house[0], house[1], house[2]};
 	if (!m_slots.empty() && m_slots[static_cast<size_t>(m_selected)].has_glow)
 		for (int i = 0; i < 3; i++)
@@ -335,27 +325,16 @@ void App::Update(double dt, const Input& in)
 
 void App::Pose(float d, float t, Mat4& model, float& brightness) const
 {
-	const float ad = std::fabs(d);
-	const float s = d < 0 ? -1.0f : 1.0f;
-	const float e = Smoothstep(0.0f, 1.0f, std::min(ad, 1.0f));
-	const float far_ = std::max(ad - 1.0f, 0.0f);
-	const float side_x = kSideX + far_ * kStepX;
-	const float side_z = kSideZ - far_ * kStepZ;
-	const float sway = (1.0f - e) * 0.10f * std::sin(t * 0.7f);
-	// The picked case hovers: it lifts off the floor as it is picked, then bobs between 0.03 and
-	// 0.054 above it. Resting on the floor at the bottom of the bob (vk-285-46) still put the
-	// halo's bottom line, drawn 0.016 outside the case, into the reflection.
-	const float bob = (1.0f - e) * (0.030f + 0.012f * (1.0f + std::sin(t * 1.3f)));
-	float x = s * Mix(0.0f, side_x, e);
-	float z = Mix(kCenterZ, side_z, e);
-	const float turn = Mix(sway, -s * Radians(kSideTurn), e);
-	if (m_launching && ad < 0.5f)
-	{
-		const float l = Smoothstep(0.0f, 0.6f, static_cast<float>(m_time - m_launch_time));
-		z += l * 2.2f;
-	}
-	model = Mat4::Translate(x, bob, z) * Mat4::RotateY(turn);
-	brightness = Mix(1.0f, 0.74f, e) - 0.05f * std::min(far_, 5.0f);
+    // Porpoise-inspired shallow-angle perspective case geometry.
+    // Keep our native Vulkan cover texture caching and reflected floor.
+    const ClassicCoverPose pose = PorpoiseCoverflowPose(d, t);
+    model = pose.model;
+    brightness = pose.brightness;
+    if (m_launching && std::fabs(d) < 0.5f)
+    {
+        const float l = Smoothstep(0.0f, 0.6f, static_cast<float>(m_time - m_launch_time));
+        model = Mat4::Translate(0.0f, 0.0f, l * 2.2f) * model;
+    }
 }
 
 void App::Build(FrameDesc& f, const std::string& clock)
@@ -363,6 +342,11 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	const float W = static_cast<float>(m_renderer->width()), H = static_cast<float>(m_renderer->height());
 	const float k = H / 2160.0f;
 	const float t = static_cast<float>(m_time);
+	if (m_cfg.exact) {
+        m_cfg.exact->Select(m_selected,m_scroll,m_time,clock);
+        m_cfg.exact->SetCoverProgress(m_covers ? m_covers->Progress() : CoverProgress{});
+        m_cfg.exact->SetTheme(m_sheet.ThemeValue());
+    }
 	const Mat4 proj = Mat4::Perspective(Radians(kFovY), W / H, 0.1f, 60.0f);
 	// vk-285-114: with the options sheet open on the right, the shelf slides left (the camera moves right), so the
 	// picked case stays in view beside its settings.
@@ -377,10 +361,11 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	f.glow[2] = m_glow[2];
 	f.glow[3] = 1.0f;
 	f.floor_y = kFloorY;
-	f.reflect_strength = 0.24f;
-	f.reflect_falloff = 3.6f;
+	f.reflect_strength = 0.40f;
+	f.reflect_falloff = 2.55f;
 	f.boxes.clear();
 	f.reflections.clear();
+	f.backdrop_set = VK_NULL_HANDLE;
 	f.ui.clear();
 	f.halo = HaloDraw();
 
@@ -388,10 +373,10 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	const Vec2 centre = Project(f.view_proj, Vec3(0, 0.1f, kCenterZ - 0.6f));
 	const Vec2 floor_pt = Project(f.view_proj, Vec3(0, kFloorY, kCenterZ));
 	BgParams& bg = f.bg;
-	bg.glow_color[0] = 0.62f;
-	bg.glow_color[1] = 0.50f;
-	bg.glow_color[2] = 0.86f;
-	bg.glow_color[3] = 0.50f;
+	bg.glow_color[0] = Mix(0.25f, m_glow[0], 0.32f);
+	bg.glow_color[1] = Mix(0.45f, m_glow[1], 0.32f);
+	bg.glow_color[2] = Mix(0.95f, m_glow[2], 0.32f);
+	bg.glow_color[3] = 0.26f;
 	bg.glow_pos[0] = centre.x;
 	bg.glow_pos[1] = centre.y;
 	bg.glow_pos[2] = 0.58f;
@@ -399,9 +384,9 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	bg.floor_glow[0] = floor_pt.x;
 	bg.floor_glow[1] = floor_pt.y;
 	bg.floor_glow[2] = 0.30f;
-	bg.floor_glow[3] = 0.035f;
-	const float top[4] = {0.035f, 0.035f, 0.048f, 1}, mid[4] = {0.075f, 0.068f, 0.105f, 1},
-				bottom[4] = {0.012f, 0.012f, 0.018f, 1};
+	bg.floor_glow[3] = 0.0f; // repurposed as optional blurred cover-backdrop opacity
+	const float top[4] = {0.045f, 0.072f, 0.13f, 1}, mid[4] = {0.022f, 0.043f, 0.095f, 1},
+				bottom[4] = {0.005f, 0.009f, 0.028f, 1};
 	std::copy(top, top + 4, bg.top);
 	std::copy(mid, mid + 4, bg.mid);
 	std::copy(bottom, bottom + 4, bg.bottom);
@@ -409,6 +394,22 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	bg.misc[1] = floor_pt.y;
 	bg.misc[2] = 0.55f;
 	bg.misc[3] = t;
+
+	// Porpoise-style soft spotlight: blur the chosen game's own cover behind
+	// the 3D shelf. The Vulkan background pass samples the existing texture
+	// descriptor; no art is duplicated or downloaded solely for ambience.
+	if (!m_slots.empty() && m_selected >= 0 &&
+	    static_cast<size_t>(m_selected) < m_slots.size())
+	{
+		const Slot& chosen = m_slots[static_cast<size_t>(m_selected)];
+		if (chosen.set && chosen.cover)
+		{
+			f.backdrop_set = chosen.set;
+			const float settle = 1.0f - Clamp(
+				std::fabs(m_scroll - static_cast<float>(m_selected)) * 1.2f, 0.0f, 1.0f);
+			bg.floor_glow[3] = 0.23f * settle * chosen.cover_mix * (1.0f - slide);
+		}
+	}
 
 	// The cases, nearest the selection last so the halo lands on top of its neighbours.
 	const int n = static_cast<int>(m_games.size());
@@ -465,14 +466,24 @@ void App::Build(FrameDesc& f, const std::string& clock)
 
 	// ---- UI ----
 	const uint32_t white = Rgba(1, 1, 1), dim = Rgba(0.78f, 0.78f, 0.80f), faint = Rgba(0.59f, 0.59f, 0.62f);
-	const uint32_t accent = Rgba(0.76f, 0.68f, 0.96f);
+	const uint32_t accent = Rgba(1.0f, 0.055f, 0.09f);
 	const float margin = 110.0f * k;
 	std::vector<UiVertex>& ui = f.ui;
+
+	// Make a failed Porpoise initialization unmistakable. The old shelf
+	// can still launch ROMs, but is no longer advertised as the new UI.
+	if (m_cfg.exact_failed)
+	{
+		Fonts::AddRoundedRect(ui, W*0.21f, H*0.015f, W*0.58f, 112.0f*k,
+			14.0f*k, Rgba(0.56f,0.02f,0.05f,0.88f));
+		m_fonts->AddText(ui, "PORPOISE UI INIT FAILED - see SNESXY logs", W*0.5f,
+			80.0f*k, 38.0f*k, Rgba(1,1,1), 0.2f, Fonts::Center);
+	}
 
 	// (AI-assisted) Wordmark and the running build version beneath it.
 	float x = margin;
 	x += m_fonts->AddText(ui, "PS5", x, 150.0f * k, 60.0f * k, white, 0.8f);
-	m_fonts->AddText(ui, "SNES", x + 2.0f * k, 150.0f * k, 60.0f * k, accent, 0.8f);
+	m_fonts->AddText(ui, "NES", x + 2.0f * k, 150.0f * k, 60.0f * k, accent, 0.8f);
 	{
 		const float hpx = 32.0f * k, hy2 = 214.0f * k;
 		float hx2 = margin + 2.0f * k;
@@ -481,56 +492,25 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	if (!clock.empty())
 		m_fonts->AddText(ui, clock.c_str(), W - margin, 150.0f * k, 58.0f * k, white, 0.2f, Fonts::Right);
 
-	// The settings page's QR tile, bottom right (vk-285-50). The code is dark on a light tile, as
-	// cameras expect; neighbouring dark modules are merged into runs and grown by a pixel so the
-	// rectangles' anti-aliased edges leave no seams between them. vk-285-51: smaller and dimmer (the
-	// user's choice: "less"); it still scans from a metre or so, and a phone keeps the page's key
-	// once it has opened it, so the code is mostly needed once.
-	const bool qr_shown = m_qr_size > 0;
-	const size_t qr_begin = ui.size();
-	if (qr_shown)
-	{
-		const float tile = 220.0f * k;
-		const int quiet = 4; // the standard quiet zone
-		const float mod = std::floor(tile / static_cast<float>(m_qr_size + 2 * quiet));
-		const float side = mod * static_cast<float>(m_qr_size + 2 * quiet);
-		const float tx = std::floor(W - margin - side), ty = std::floor(H - 150.0f * k - side);
-		Fonts::AddRoundedRect(ui, tx, ty, side, side, 12.0f * k, Rgba(0.60f, 0.59f, 0.66f));
-		const uint32_t ink = Rgba(0.07f, 0.06f, 0.16f);
-		const float grow = 0.4f; // enough to close the seams, little enough to keep the modules their size
-		for (int y = 0; y < m_qr_size; y++)
-			for (int x0 = 0; x0 < m_qr_size;)
-			{
-				if (!m_qr[static_cast<size_t>(y) * m_qr_size + x0])
-				{
-					x0++;
-					continue;
-				}
-				int x1 = x0;
-				while (x1 < m_qr_size && m_qr[static_cast<size_t>(y) * m_qr_size + x1])
-					x1++;
-				Fonts::AddRoundedRect(ui, tx + (x0 + quiet) * mod - grow, ty + (y + quiet) * mod - grow,
-					(x1 - x0) * mod + 2 * grow, mod + 2 * grow, 0.0f, ink);
-				x0 = x1;
-			}
-		// vk-285-52: no caption, the user's call ("qr is enough"); 51 had "Settings on your phone" and
-		// the address beside it.
-	}
-	else if (m_web_known)
-		m_fonts->AddText(ui, Tr(Str::NoNetwork), W - margin, H - 170.0f * k, 32.0f * k, faint, 0.1f, Fonts::Right);
 	const float sheet_e = Smoothstep(0.0f, 1.0f, m_sheet_anim);
-	FadeRange(ui, qr_begin, ui.size(), 1.0f - sheet_e); // vk-285-114: under the options sheet
 
 	const size_t title_begin = ui.size();
 	if (n > 0)
 	{
 		const GameInfo& g = m_games[static_cast<size_t>(m_selected)];
-		// Title, shrunk to fit (narrower beside the QR tile, which sits bottom right).
-		const float title_w = W * (qr_shown ? 0.72f : 0.8f);
-		float px = 96.0f * k;
-		while (px > 64.0f * k && m_fonts->Measure(g.title.c_str(), px) > title_w)
-			px -= 4.0f * k;
-		m_fonts->AddText(ui, g.title.c_str(), W * 0.5f, H * 0.842f, px, white, 0.55f, Fonts::Center);
+		// Selected game title below the main 3D cover, never on its artwork.
+		const float title_w = W * 0.64f;
+		float px = 92.0f * k;
+		while (px > 48.0f * k && m_fonts->Measure(g.title.c_str(), px) > title_w)
+			px -= 2.0f * k;
+		const float title_y = H * 0.795f;
+		m_fonts->AddText(ui, g.title.c_str(), W * 0.5f + 2.0f * k, title_y + 2.0f * k,
+			px, Rgba(0, 0, 0, 0.52f), 0.55f, Fonts::Center);
+		m_fonts->AddText(ui, g.title.c_str(), W * 0.5f, title_y, px, white, 0.55f, Fonts::Center);
+        // (AI-assisted) Show the actual selected ROM source beneath its title.
+        const std::string rom_path="ROM: "+g.path;float path_px=28.0f*k;
+        while(path_px>1.0f*k&&m_fonts->Measure(rom_path.c_str(),path_px)>title_w)path_px-=1.0f*k;
+        m_fonts->AddText(ui,rom_path.c_str(),W*0.5f,H*0.875f,path_px,dim,0.1f,Fonts::Center);
 
 		// Details and badges on one centred row.
 		std::string info;
@@ -563,10 +543,10 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	}
 	else
     {
-        m_fonts->AddText(ui, Tr(Str::NoGames), W * 0.5f, H * 0.5f-70.0f*k, 40.0f*k, white, 0.4f, Fonts::Center);
-        m_fonts->AddText(ui, "/data/PS5SNES/games/", W*0.5f,H*0.5f,28.0f*k,white,0.4f,Fonts::Center);
-        m_fonts->AddText(ui, "/mnt/usb0/homebrew/PS5SNES/games/", W*0.5f,H*0.5f+45.0f*k,28.0f*k,white,0.4f,Fonts::Center);
-        m_fonts->AddText(ui, ".sfc / .smc / .swc / .fig / .zip", W*0.5f,H*0.5f+100.0f*k,24.0f*k,white,0.4f,Fonts::Center);
+        m_fonts->AddText(ui, Tr(Str::NoGames), W*0.5f,H*0.5f-65*k,40*k,white,0.4f,Fonts::Center);
+        m_fonts->AddText(ui,"/data/PS5SNES/games/",W*0.5f,H*0.5f,28*k,white,0.4f,Fonts::Center);
+        m_fonts->AddText(ui,"/mnt/usb0/homebrew/PS5SNES/games/",W*0.5f,H*0.5f+45*k,28*k,white,0.4f,Fonts::Center);
+        m_fonts->AddText(ui,".nes / .zip",W*0.5f,H*0.5f+100*k,24*k,white,0.4f,Fonts::Center);
     }
 	FadeRange(ui, title_begin, ui.size(), 1.0f - sheet_e); // vk-285-114: the sheet shows the title itself
 
@@ -621,8 +601,7 @@ void App::Build(FrameDesc& f, const std::string& clock)
 	else
 	{
 		hint(icon::Cross, nullptr, Tr(Str::HintPlay)); // vk-285-110: hints in the PS5's language
-		// vk-285-69: the shelf opens with one game too (its QR code leads to the settings page and the
-		// logs); browsing needs two.
+		// Browsing needs two games; the first can still be launched.
 		if (n > 1)
 		{
 			hint(icon::DpadLeftRight, nullptr, Tr(Str::HintBrowse));
@@ -630,8 +609,6 @@ void App::Build(FrameDesc& f, const std::string& clock)
 		}
 		hint(icon::Square, nullptr, Tr(Str::HintSettings)); // vk-285-114
         hint("#R2", nullptr, "Update cover");
-		if (m_qr_size > 0)
-			hint(icon::Triangle, nullptr, Tr(m_qr_big ? Str::HintBack : Str::HintQrCode)); // vk-285-118
 	}
 
 	std::string status = m_time - m_sheet_status_time < 6 && !m_sheet_status.empty() ? m_sheet_status : (m_covers ? m_covers->Status() : std::string());
@@ -673,36 +650,50 @@ void App::Build(FrameDesc& f, const std::string& clock)
 		}
 	}
 
-	// vk-285-118 (AI-assisted): the QR code large in the middle, black on white for any phone camera (Triangle).
-	if (m_qr_big_anim > 0.0f && m_qr_size > 0)
-	{
-		const float e = Smoothstep(0.0f, 1.0f, m_qr_big_anim);
-		const size_t begin = ui.size();
-		Fonts::AddRoundedRect(ui, 0, 0, W, H, 0.0f, Rgba(0.01f, 0.01f, 0.012f, 0.80f));
-		const int quiet = 4;
-		const float mod = std::floor(H * 0.62f / static_cast<float>(m_qr_size + 2 * quiet));
-		const float side = mod * static_cast<float>(m_qr_size + 2 * quiet);
-		const float tx = std::floor((W - side) * 0.5f), ty = std::floor((H - side) * 0.5f - 40.0f * k);
-		Fonts::AddRoundedRect(ui, tx, ty, side, side, 16.0f * k, Rgba(1.0f, 1.0f, 1.0f));
-		const uint32_t ink = Rgba(0.0f, 0.0f, 0.0f);
-		for (int y = 0; y < m_qr_size; y++)
-			for (int x0 = 0; x0 < m_qr_size;)
-			{
-				if (!m_qr[static_cast<size_t>(y) * m_qr_size + x0])
-				{
-					x0++;
-					continue;
-				}
-				int x1 = x0;
-				while (x1 < m_qr_size && m_qr[static_cast<size_t>(y) * m_qr_size + x1])
-					x1++;
-				Fonts::AddRoundedRect(ui, tx + (x0 + quiet) * mod - 0.4f, ty + (y + quiet) * mod - 0.4f, (x1 - x0) * mod + 0.8f, mod + 0.8f, 0.0f, ink);
-				x0 = x1;
-			}
-		FadeRange(ui, begin, ui.size(), e);
-	}
-	if (m_nfs_keyboard_open)
-		BuildNfsKeyboard(ui, W, H, k);
+	if (m_cfg.exact)
+    {
+        f.boxes.clear();
+        f.reflections.clear();
+        f.halo = HaloDraw();
+        f.backdrop_set = VK_NULL_HANDLE;
+        // Keep Porpoise as the *only* background. Old SNESXY black plastic
+        // cases, legacy text and button hints must never reappear in Settings.
+        // The native options/keyboard are the only UI drawn over Porpoise.
+        ui.clear();
+        if (m_sheet_anim > 0.001f)
+        {
+            Fonts::AddRoundedRect(ui, 0, 0, W, H, 0,
+                Rgba(0.005f, 0.015f, 0.045f, 0.64f * sheet_e));
+            BuildSheet(ui, W, H, k, Rgba(0.30f, 0.62f, 1.0f));
+        }
+        if (m_nfs_keyboard_open)
+            BuildNfsKeyboard(ui, W, H, k);
+    }
+    else if (m_nfs_keyboard_open)
+        BuildNfsKeyboard(ui, W, H, k);
+
+    if (m_exit_confirm)
+    {
+        // Render after Porpoise: native UI overlay over the live game covers.
+        Fonts::AddRoundedRect(ui,0,0,W,H,0,Rgba(0.003f,0.007f,0.028f,0.79f));
+        const float pw=std::min(W-100*k,1570*k),ph=600*k;
+        const float x=(W-pw)*0.5f,y=(H-ph)*0.5f;
+        Fonts::AddRoundedRect(ui,x-5*k,y-5*k,pw+10*k,ph+10*k,34*k,Rgba(0.16f,0.72f,1.0f,0.70f));
+        Fonts::AddRoundedRect(ui,x,y,pw,ph,31*k,Rgba(0.027f,0.046f,0.13f,0.99f));
+        Fonts::AddRoundedRect(ui,x+56*k,y+49*k,94*k,7*k,3*k,Rgba(0.26f,0.84f,1.0f));
+        Fonts::AddRoundedRect(ui,x+154*k,y+49*k,65*k,7*k,3*k,Rgba(0.94f,0.33f,0.90f));
+        m_fonts->AddText(ui,"Close SNESXY?",W*0.5f,y+195*k,81*k,Rgba(1,1,1),0.65f,Fonts::Center);
+        m_fonts->AddText(ui,"Do you want to close SNESXY?",W*0.5f,y+297*k,43*k,
+                         Rgba(0.73f,0.80f,0.98f),0.15f,Fonts::Center);
+        const float bw=335*k,bh=111*k,gap=44*k,buttonsY=y+369*k;
+        const float yesX=W*0.5f-bw-gap*0.5f,noX=W*0.5f+gap*0.5f;
+        Fonts::AddRoundedRect(ui,yesX,buttonsY,bw,bh,21*k,Rgba(0.08f,0.40f,0.67f,0.88f));
+        Fonts::AddRoundedRect(ui,noX,buttonsY,bw,bh,21*k,Rgba(0.34f,0.13f,0.49f,0.94f));
+        m_fonts->AddText(ui,icon::Cross,yesX+54*k,buttonsY+76*k,57*k,Rgba(1,1,1),0.2f);
+        m_fonts->AddText(ui,"Yes",yesX+154*k,buttonsY+77*k,48*k,Rgba(1,1,1),0.45f);
+        m_fonts->AddText(ui,icon::Circle,noX+54*k,buttonsY+76*k,57*k,Rgba(1,1,1),0.2f);
+        m_fonts->AddText(ui,"No",noX+154*k,buttonsY+77*k,48*k,Rgba(1,1,1),0.45f);
+    }
 }
 
 // ---- vk-285-114: the options sheet ---------------------------------------------------------------------------------
@@ -1099,7 +1090,7 @@ void App::BuildSheet(std::vector<UiVertex>& ui, float W, float H, float k, uint3
 	// The panel: a soft shadow, a hairline edge, the body.
 	Fonts::AddRoundedRect(ui, x - 6 * k, y + 10 * k, sw + 12 * k, sh + 12 * k, 48 * k, Rgba(0, 0, 0, 0.35f));
 	Fonts::AddRoundedRect(ui, x - 2 * k, y - 2 * k, sw + 4 * k, sh + 4 * k, 44 * k, Rgba(1, 1, 1, 0.16f));
-	Fonts::AddRoundedRect(ui, x, y, sw, sh, 42 * k, Rgba(0.065f, 0.062f, 0.085f, 0.985f)); // the shelf's text must not show through
+	Fonts::AddRoundedRect(ui, x, y, sw, sh, 42 * k, Rgba(0.055f, 0.055f, 0.062f, 0.985f)); // the shelf's text must not show through
 
 	const float cx = x + 64 * k, inner = sw - 128 * k;
 	// vk-285-117 (AI-assisted): a calmer top (Spyros: the title touched what was above and below it): the title alone on the
