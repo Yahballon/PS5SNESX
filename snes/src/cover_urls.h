@@ -756,7 +756,16 @@ inline std::vector<std::string> CoverUrls(const fe::GameInfo& game){
   else rank=code=="U"?80:code=="E"?70:code=="UK"?60:0;
   rank-=item.variants*2;if(rank>score){score=rank;best=&item;}}
  if(best)urls.emplace_back(std::string("https://raw.githubusercontent.com/Globaleliteee/Gaming_Console_Covers_Art_Repository/main/covers/nintendo/SNES/")+best->filename);
- auto add=[&](const std::string& name){auto url=std::string("https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Super_Nintendo_Entertainment_System/master/Named_Boxarts/")+CoverEncode(name)+".png";if(std::find(urls.begin(),urls.end(),url)==urls.end())urls.push_back(std::move(url));};
- add(game.stem);if(!region.empty())add(title+" ("+region+")");else add(title);return urls;
+ auto add=[&](const std::string& name){
+   const std::string encoded=CoverEncode(name)+".png";
+   for(const char* host:{
+       "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Super_Nintendo_Entertainment_System/master/Named_Boxarts/",
+       "https://thumbnails.libretro.com/Nintendo%20-%20Super%20Nintendo%20Entertainment%20System/Named_Boxarts/"
+   }){std::string url=std::string(host)+encoded;
+      if(std::find(urls.begin(),urls.end(),url)==urls.end())urls.push_back(std::move(url));}
+ };
+ add(game.stem);if(!region.empty())add(title+" ("+region+")");else add(title);
+ add(title);add(title+" (USA)");add(title+" (Europe)");add(title+" (Japan)");
+ return urls;
 }
 }

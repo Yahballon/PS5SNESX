@@ -586,6 +586,17 @@ void CoverService::SetSelected(int selected)
 	m_selected = selected;
 }
 
+CoverProgress CoverService::Progress() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    CoverProgress p;
+    p.games=static_cast<int>(m_games.size());
+    p.scanned=p.games;p.planned=m_download_total;p.attempted=m_download_done;
+    p.downloaded=m_download_saved;p.failed=m_download_failed;
+    p.transferring=m_busy;p.offline=m_offline;
+    p.done=m_finished.load() || (!m_busy && m_download_total<=m_download_done);
+    p.current=m_current_cover;
+    return p;
+}
 std::string CoverService::Status() const
 {
 	std::lock_guard<std::mutex> lock(m_mutex);
@@ -669,6 +680,7 @@ bool CoverService::DownloadCover(int index, CoverImage& out)
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_busy = true;
+        m_current_cover=g.title;
 	}
 	int status=FetchCover(g,m_cfg,m_download,bytes,out,url,&m_stop);
 	bool ok = false;
@@ -693,6 +705,8 @@ bool CoverService::DownloadCover(int index, CoverImage& out)
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_download_done++;
+        if(ok)++m_download_saved;else ++m_download_failed;
+        m_current_cover.clear();
 		if (ok)
 			m_download_status = saved ? "Covers: " + std::to_string(m_download_done) + "/" + std::to_string(m_download_total) + " processed" : "Cover shown; cache save failed";
 		else if (!m_stop)

@@ -106,6 +106,11 @@ std::string UsbDriveRoot(const std::string& path);
 // another shape.
 std::string OplGameId(const std::string& serial);
 
+struct CoverProgress {
+ int games=0,scanned=0,planned=0,attempted=0,downloaded=0,failed=0;
+ bool transferring=false,offline=false,done=false;
+ std::string current;
+};
 class CoverService
 {
 public:
@@ -128,6 +133,7 @@ public:
 
 	// A line for the UI: "" when idle, else e.g. "Downloading covers  3 / 11".
 	std::string Status() const;
+    CoverProgress Progress() const;
 
 	// Paints a placeholder front / a spine (also used before the worker runs).
 	static void PaintSpine(const Fonts& fonts, const GameInfo& g, CoverImage& out);
@@ -171,6 +177,8 @@ private:
 	std::deque<CoverImage> m_results;
     std::deque<int> m_refresh_requests;
 	int m_download_total = 0, m_download_done = 0;
+    int m_download_saved = 0, m_download_failed = 0;
+    std::string m_current_cover;
 	bool m_offline = false;
 	bool m_busy = false;
 	std::string m_download_status;

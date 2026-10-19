@@ -274,9 +274,14 @@ const std::vector<OptionGroup>& OptionGroups()
 {
     // (AI-assisted) SNES values in the unchanged original options-sheet layout.
     static const std::vector<OptionGroup> groups = {
+        {"Appearance", {Seg("SNESXY/Theme", "Theme", "royal-indigo", "",
+           {{"royal-indigo","Royal Indigo"},{"sunset-arcade","Sunset Arcade"},
+            {"emerald-circuit","Emerald Circuit"},{"glacier-glass","Glacier Glass"},
+            {"midnight-gold","Midnight Gold"}},
+           "SNESXY-exclusive 3D themes. Saved globally; switches immediately.")}, kTabSettings},
         {"Emulation", {Seg("SNES/Region", "Region", "auto", "", {{"auto","Automatic"},{"ntsc","NTSC"},{"pal","PAL"}}),
                        Seg("SNES/ChipMode", "Special-chip emulation", "HLE", "", {{"HLE","High-level"},{"LLE","Firmware-based"}})}, kTabSettings},
-        {"Display", {Seg("SNES/Aspect", "Picture", "4:3", "", {{"4:3","4:3"},{"Integer","Integer pixels"}})}, kTabSettings},
+        {"Display", {Seg("SNES/Aspect", "Picture", "16:9", "", {{"16:9","16:9 Fullscreen"},{"4:3","4:3 Original"},{"Integer","Integer pixels"}})}, kTabSettings},
         {"Audio", {Toggle("SNES/Sound", "Game sound", "true", "")}, kTabSettings},
         {"SNES buttons", NesButtonRows(), kTabControls},
         {"Save state", NesShortcutRows(0), kTabControls},
@@ -394,6 +399,13 @@ void OptionsSheet::BuildRows()
 
 OptionsSheet::Effective OptionsSheet::Get(const std::string& key, const std::string& def) const
 {
+    if(key=="SNESXY/Theme") {
+        const IniState& global=m_global?m_own:m_globals;
+        if(const std::string* value=Find(global,key))
+            return {*value,m_global?From::Own:From::Global};
+        return {def,From::Default};
+    }
+
 	if (const std::string* v = Find(m_own, key))
 		return {*v, From::Own};
 	if (!m_global)
@@ -579,8 +591,11 @@ std::string OptionsSheet::Help(const Row& r) const
 
 bool OptionsSheet::Save(const std::vector<Change>& changes, const std::string& note)
 {
+    const bool theme_only=changes.size()==1&&changes.front().key=="SNESXY/Theme";
+    const std::string& destination=theme_only?m_paths.gs_ini:m_path;
+
 	std::string what, error;
-	if (!EditSettingsFile(m_path, m_global ? m_header : m_header + ": written from the PS5SX2 shelf", changes, what, error))
+	if (!EditSettingsFile(destination, theme_only ? "# SNESXY library-wide theme" : (m_global ? m_header : m_header + ": written from SNESXY"), changes, what, error))
 	{
 		m_status = "Couldn't save: " + error;
 		std::printf("[options] %s: %s\n", m_file_label.c_str(), m_status.c_str());
@@ -604,7 +619,7 @@ bool OptionsSheet::SaveNfsUrl(const std::string& url)
 		m_status = error.empty() ? "Could not save NFS URL" : error;
 		return false;
 	}
-	m_status = "Saved. Restart PS5SX2 to refresh network games.";
+	m_status = "Saved. Restart SNESXY to refresh network games.";
 	m_nfs_url = m_paths.nfs_url ? m_paths.nfs_url() : url;
 	if (m_paths.log)
 		m_paths.log("(AI-assisted) shelf: NFS URL changed; restart to refresh network games");
@@ -703,7 +718,7 @@ bool OptionsSheet::Activate(const Row& r, double now)
 {
     if(r.kind==Kind::RescanLibrary){
         std::string error;bool okay=m_paths.rescan_library&&m_paths.rescan_library(error);
-        m_status=okay?"Rescan requested. Restart PS5SNES.":error;
+        m_status=okay?"Rescan requested. Restart SNESXY.":error;
         return okay;
     }
 	const int index = static_cast<int>(&r - m_rows.data());
