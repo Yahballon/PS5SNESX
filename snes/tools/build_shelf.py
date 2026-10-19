@@ -50,10 +50,18 @@ for name in ['u_thread.o','anon_file.o','os_file.o']:objects.append(mesa/name)
 vkarchive=out/'vulkan/libps5vk.ps5.a'
 shutil.copy2(vulkan/'build/driver/ps5/libps5vk.ps5.a',vkarchive)
 subprocess.run(['llvm-objcopy-18','--redefine-sym','vkGetInstanceProcAddr=ps5vk_driver_vkGetInstanceProcAddr',str(vkarchive)],check=True)
-vklibs=[vkarchive,vulkan/'.deps/native/vulkan-runtime/lib/libvk_runtime.ps5.a',vulkan/'build/driver/ps5/libpsbc_driver.ps5.a',vulkan/'.deps/native/psbc/lib/libpsbc_support.ps5.a']
+psbc=Path(os.environ['PS5SNES_PSBC_GENERATED'])
+if not psbc.is_file() or psbc.stat().st_size<10000:
+    raise RuntimeError('Missing generated PSBC archive: '+str(psbc))
+vklibs=[vkarchive,vulkan/'.deps/native/vulkan-runtime/lib/libvk_runtime.ps5.a',vulkan/'build/driver/ps5/libpsbc_driver.ps5.a',psbc,vulkan/'.deps/native/psbc/lib/libpsbc_support.ps5.a']
 netlibs=[z/'lib'/f'lib{name}.a' for name in ['curl','psl','ssl','crypto','zstd','z']]
 
 stubs=sorted(str(p) for p in (sdk/'target/lib').glob('*.so') if p.name not in ('libScePosixForWebKit.so','libSceGLSlimVSH.so'))
+agc=Path(os.environ['PS5SNES_AGC_STUB_DIR'])
+agc_stubs=[agc/'libSceAgc.so',agc/'libSceAgcDriver.so']
+for stub in agc_stubs:
+    if not stub.is_file():raise RuntimeError('Missing AGC import stub: '+str(stub))
+stubs.extend(str(p) for p in agc_stubs)
 pie=out/'llvm-pie.elf'
 link=['ld.lld-18','-m','elf_x86_64','-pie','-z','max-page-size=0x4000','-mllvm','-emulated-tls',
       '--hash-style=gnu','-T',str(native/'tooling/native/ps5-pie.ld'),
@@ -73,7 +81,8 @@ subprocess.run(['clang++-18','-std=c++20','-O2','-o',str(tool),
                 *(str(native/'tooling/native'/f'{name}.cpp') for name in
                   ['native_app_builder','elf_object','self_container','sce_module_writer']),'-lz'],check=True)
 subprocess.run([str(tool),'link','--in',str(pie),'--out',str(out/'eboot.elf'),'--stub-dir',str(sdk/'target/lib'),
-                '--module-sdk','0x02000009','--companion-sdk','0x08050001','--file-name','eboot.elf'],check=True)
+                '--stub',str(agc_stubs[0]),'--stub',str(agc_stubs[1]),
+                 '--module-sdk','0x02000009','--companion-sdk','0x08050001','--file-name','eboot.elf'],check=True)
 subprocess.run(['python3',str(nes/'tools/check_memory.py'),str(out/'eboot.elf')],check=True)
 subprocess.run(['python3',str(project/'ps5/tools/prepare_console_elf.py'),'--input',str(out/'eboot.elf'),
                 '--output',str(out/'eboot-console-ready.elf')],check=True)
@@ -82,8 +91,22 @@ subprocess.run([str(tool),'self','--sign','--in',str(out/'eboot.elf'),'--out',st
 subprocess.run([str(tool),'self','--inspect','--file',str(app/'eboot.bin')],check=True)
 shutil.copytree(nes/'sce_sys',app/'sce_sys',dirs_exist_ok=True)
 shutil.copy2(deps/'PS5_Vulkan/runtime/libc.prx',app/'sce_module/libc.prx')
-subprocess.run(['python3',str(deps/'filesystem-helper/tools/build-lapy-helper.py'),'PPSA99205',str(out/'filesystem-helper')],check=True)
-for name in ['lapy.elf','lapy-manifest.json']:shutil.copy2(out/'filesystem-helper'/name,app/name)
+porpoise_assets=project/'ps5/porpoise_original/assets'
+for required in ['fonts/Nunito-Regular.ttf','fonts/Nunito-SemiBold.ttf','fonts/Nunito-Bold.ttf',
+                 'fonts/Nunito-ExtraBold.ttf','fonts/NotoSansJP-Porpoise.ttf','ui/buttons.png']:
+    if not (porpoise_assets/required).is_file():
+        raise RuntimeError('Missing pinned Porpoise asset: '+required)
+shutil.copytree(porpoise_assets,app/'porpoise-ui',dirs_exist_ok=True)
+shutil.copy2(project/'ps5/porpoise_original/LICENSE',app/'porpoise-ui/LICENSE')
+baseline=os.environ.get('PS5SNES_LAPY_BASELINE')
+if baseline:
+    with zipfile.ZipFile(baseline) as archive:
+        for filename in ['lapy.elf','lapy-manifest.json']:
+            (app/filename).write_bytes(archive.read('PPSA99205/'+filename))
+else:
+    subprocess.run(['python3',str(deps/'filesystem-helper/tools/build-lapy-helper.py'),'PPSA99205',str(out/'filesystem-helper')],check=True)
+    for filename in ['lapy.elf','lapy-manifest.json']:
+        shutil.copy2(out/'filesystem-helper'/filename,app/filename)
 licenses=app/'licenses';licenses.mkdir(exist_ok=True)
 for path,name in [(core/'LICENSE','bsnes-mercury-GPL.txt'),(project/'COPYING.GPLv3','GPLv3.txt'),
                   (out/'filesystem-helper/Lapy-MIT.txt','Lapy-MIT.txt'),(deps/'libnfs/COPYING','libnfs.txt')]:
@@ -106,4 +129,4 @@ with zipfile.ZipFile(bundle,'w',zipfile.ZIP_DEFLATED) as archive:
     for path in app.rglob('*'):
         if path.is_file():archive.write(path,Path('PPSA99205')/path.relative_to(app))
     archive.write(nes/'INSTALL.md','INSTALL.md')
-print('PS5SNES test package (AI-assisted):',bundle,flush=True)
+print('SNESXY native install package:',bundle,flush=True)
